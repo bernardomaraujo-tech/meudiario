@@ -13,35 +13,45 @@ export const biomarkers = [
   { id: 'linfocitos', name: 'Linfócitos', unit: '%', category: 'Hemograma', direction: 'range', description: 'Percentagem de linfócitos nos glóbulos brancos.' },
   { id: 'monocitos', name: 'Monócitos', unit: '%', category: 'Hemograma', direction: 'range', description: 'Percentagem de monócitos nos glóbulos brancos.' },
   { id: 'plaquetas', name: 'Plaquetas', unit: '10^3/uL', category: 'Hemograma', direction: 'range', description: 'Contagem de plaquetas, relevantes para coagulação.' },
-  { id: 'ferro_serico', name: 'Ferro Sérico', unit: 'ug/dL', category: 'Ferro', direction: 'range', description: 'Ferro circulante no sangue.' },
-  { id: 'ferritina', name: 'Ferritina', unit: 'ng/mL', category: 'Ferro', direction: 'range', description: 'Marcador de reservas de ferro.' },
-  { id: 'capacidade_fixacao_ferro', name: 'Capacidade Fixação do Ferro', unit: 'ug/dL', category: 'Ferro', direction: 'range', description: 'Capacidade total de ligação/transporte de ferro.' },
-  { id: 'sideremia', name: 'Siderémia', unit: 'ug/dL', category: 'Ferro', direction: 'range', description: 'Concentração de ferro no soro.' },
+
+  { id: 'ferro_serico', name: 'Ferro Sérico', unit: 'ug/dL', category: 'Ferro e Anemia', direction: 'range', description: 'Ferro circulante no sangue.' },
+  { id: 'ferritina', name: 'Ferritina', unit: 'ng/mL', category: 'Ferro e Anemia', direction: 'range', description: 'Marcador de reservas de ferro.' },
+  { id: 'capacidade_fixacao_ferro', name: 'Capacidade Fixação do Ferro', unit: 'ug/dL', category: 'Ferro e Anemia', direction: 'range', description: 'Capacidade total de ligação/transporte de ferro.' },
+  { id: 'sideremia', name: 'Siderémia', unit: 'ug/dL', category: 'Ferro e Anemia', direction: 'range', description: 'Concentração de ferro no soro.' },
+
   { id: 'proteina_c_reactiva', name: 'Proteína C Reactiva', unit: 'mg/L', category: 'Inflamação', direction: 'lower', description: 'Marcador de inflamação sistémica.' },
-  { id: 'ureia_pre_dialise', name: 'Ureia (pré diálise)', unit: 'mg/dL', category: 'Rim / Diálise', direction: 'lower', description: 'Ureia antes da sessão de diálise.' },
-  { id: 'ureia_pos_dialise', name: 'Ureia (pós diálise)', unit: 'mg/dL', category: 'Rim / Diálise', direction: 'lower', description: 'Ureia depois da sessão de diálise.' },
-  { id: 'albumina', name: 'Albumina', unit: 'g/dL', category: 'Nutrição / Rim', direction: 'higher', description: 'Proteína plasmática associada ao estado nutricional e inflamatório.' },
-  { id: 'creatininemia', name: 'Creatininémia', unit: 'mg/dL', category: 'Rim / Diálise', direction: 'range', description: 'Creatinina sérica, influenciada por função renal e massa muscular.' },
+
+  { id: 'ureia_pre_dialise', name: 'Ureia (pré diálise)', unit: 'mg/dL', category: 'Rim e Diálise', direction: 'lower', description: 'Ureia antes da sessão de diálise.' },
+  { id: 'ureia_pos_dialise', name: 'Ureia (pós diálise)', unit: 'mg/dL', category: 'Rim e Diálise', direction: 'lower', description: 'Ureia depois da sessão de diálise.' },
+  { id: 'creatininemia', name: 'Creatininémia', unit: 'mg/dL', category: 'Rim e Diálise', direction: 'range', description: 'Creatinina sérica, influenciada por função renal e massa muscular.' },
+  { id: 'acido_urico', name: 'Ácido Úrico', unit: 'mg/dL', category: 'Rim e Diálise', direction: 'lower', description: 'Produto do metabolismo das purinas.' },
+
+  { id: 'albumina', name: 'Albumina', unit: 'g/dL', category: 'Nutrição', direction: 'higher', description: 'Proteína plasmática associada ao estado nutricional e inflamatório.' },
   { id: 'proteinas_totais', name: 'Proteínas Totais', unit: 'g/dL', category: 'Nutrição', direction: 'range', description: 'Soma das principais proteínas circulantes no sangue.' },
+
   { id: 'alanina_aminotransferase', name: 'Alanina aminotransferase', unit: 'U/L', category: 'Fígado', direction: 'lower', description: 'Enzima hepática frequentemente abreviada ALT.' },
-  { id: 'fosfatase_alcalina', name: 'Fosfatase alcalina', unit: 'U/L', category: 'Fígado / Osso', direction: 'range', description: 'Enzima associada a fígado, vias biliares e osso.' },
-  { id: 'sodio', name: 'Sódio', unit: 'mmol/L', category: 'Eletrólitos', direction: 'range', description: 'Eletrólito essencial para equilíbrio hídrico e função neuromuscular.' },
-  { id: 'magnesio', name: 'Magnésio', unit: 'mg/dL', category: 'Eletrólitos', direction: 'range', description: 'Mineral envolvido em função muscular, nervosa e metabólica.' },
+  { id: 'fosfatase_alcalina', name: 'Fosfatase alcalina', unit: 'U/L', category: 'Fígado', direction: 'range', description: 'Enzima associada a fígado, vias biliares e osso.' },
+
+  { id: 'sodio', name: 'Sódio', unit: 'mmol/L', category: 'Eletrólitos e Minerais', direction: 'range', description: 'Eletrólito essencial para equilíbrio hídrico e função neuromuscular.' },
+  { id: 'magnesio', name: 'Magnésio', unit: 'mg/dL', category: 'Eletrólitos e Minerais', direction: 'range', description: 'Mineral envolvido em função muscular, nervosa e metabólica.' },
+  { id: 'potassio', name: 'Potássio', unit: 'mmol/L', category: 'Eletrólitos e Minerais', direction: 'range', description: 'Eletrólito crítico, especialmente relevante em diálise.' },
+  { id: 'calcio_total', name: 'Cálcio Total', unit: 'mg/dL', category: 'Eletrólitos e Minerais', direction: 'range', description: 'Cálcio total no sangue.' },
+  { id: 'fosforo_inorganico', name: 'Fósforo Inorgânico', unit: 'mg/dL', category: 'Eletrólitos e Minerais', direction: 'lower', description: 'Fósforo no sangue, relevante em doença renal e diálise.' },
+
+  { id: 'paratormona_pth', name: 'Paratormona PTH', unit: 'pg/mL', category: 'Osso e PTH', direction: 'range', description: 'Hormona paratiroideia, relevante no metabolismo cálcio-fósforo.' },
+
   { id: 'colesterol_total', name: 'Colesterol Total', unit: 'mg/dL', category: 'Lípidos', direction: 'lower', description: 'Colesterol total no sangue.' },
   { id: 'colesterol_ldl', name: 'Colesterol LDL', unit: 'mg/dL', category: 'Lípidos', direction: 'lower', description: 'Colesterol LDL, geralmente associado a risco cardiovascular quando elevado.' },
   { id: 'colesterol_hdl', name: 'Colesterol HDL', unit: 'mg/dL', category: 'Lípidos', direction: 'higher', description: 'Colesterol HDL, geralmente considerado protetor quando adequado.' },
   { id: 'trigliceridos', name: 'Triglicéridos', unit: 'mg/dL', category: 'Lípidos', direction: 'lower', description: 'Gorduras circulantes no sangue.' },
-  { id: 'potassio', name: 'Potássio', unit: 'mmol/L', category: 'Eletrólitos / Diálise', direction: 'range', description: 'Eletrólito crítico, especialmente relevante em diálise.' },
-  { id: 'calcio_total', name: 'Cálcio Total', unit: 'mg/dL', category: 'Mineral / Osso', direction: 'range', description: 'Cálcio total no sangue.' },
-  { id: 'fosforo_inorganico', name: 'Fósforo Inorgânico', unit: 'mg/dL', category: 'Mineral / Diálise', direction: 'lower', description: 'Fósforo no sangue, relevante em doença renal e diálise.' },
-  { id: 'acido_urico', name: 'Ácido Úrico', unit: 'mg/dL', category: 'Metabolismo', direction: 'lower', description: 'Produto do metabolismo das purinas.' },
+
   { id: 'hemoglobina_glicada', name: 'Hemoglobina Glicada', unit: '%', category: 'Glicose', direction: 'lower', description: 'HbA1c, média aproximada da glicose nos últimos meses.' },
   { id: 'glicemia_media_estimada', name: 'Glicemia Média Estimada', unit: 'mg/dL', category: 'Glicose', direction: 'lower', description: 'Estimativa de glicemia média associada à HbA1c.' },
   { id: 'glicemia', name: 'Glicémia', unit: 'mg/dL', category: 'Glicose', direction: 'range', description: 'Glicose no sangue no momento da colheita.' },
+
   { id: 'psa_total', name: 'PSA Total', unit: 'ng/mL', category: 'Próstata', direction: 'lower', description: 'Antigénio específico da próstata total.' },
   { id: 'psa_livre', name: 'PSA Livre', unit: 'ng/mL', category: 'Próstata', direction: 'range', description: 'Fração livre do PSA.' },
-  { id: 'ratio_psa_l', name: 'Ratio PSA L', unit: '%', category: 'Próstata', direction: 'range', description: 'Rácio entre PSA livre e PSA total.' },
-  { id: 'paratormona_pth', name: 'Paratormona PTH', unit: 'pg/mL', category: 'Mineral / Diálise', direction: 'range', description: 'Hormona paratiroideia, relevante no metabolismo cálcio-fósforo.' }
+  { id: 'ratio_psa_l', name: 'Ratio PSA L', unit: '%', category: 'Próstata', direction: 'range', description: 'Rácio entre PSA livre e PSA total.' }
 ]
 
 export const defaultBehaviours = [
@@ -69,6 +79,10 @@ export const defaultBehaviours = [
 
 export const defaultReferences = Object.fromEntries(
   biomarkers.map((b) => [b.id, {
-    sufficientMin: '', sufficientMax: '', idealMin: '', idealMax: '', direction: b.direction
+    sufficientMin: '',
+    sufficientMax: '',
+    idealMin: '',
+    idealMax: '',
+    direction: b.direction
   }])
 )
