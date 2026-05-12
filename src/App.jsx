@@ -1,0 +1,722 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Activity,
+  BookOpenCheck,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  Clock3,
+  Database,
+  Download,
+  FileSpreadsheet,
+  FlaskConical,
+  Home,
+  Info,
+  LineChart,
+  MoreHorizontal,
+  Plus,
+  Save,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Upload,
+  X
+} from 'lucide-react'
+import { biomarkers, defaultBehaviours, defaultReferences } from './data/biomarkers.js'
+
+const STORAGE = {
+  exams: 'ads_exams_v2',
+  diary: 'ads_diary_v2',
+  behaviours: 'ads_behaviours_v3',
+  refs: 'ads_refs_v2'
+}
+
+const STATUS_ORDER = ['out', 'sufficient', 'ideal', 'unknown']
+
+function todayISO() {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().slice(0, 10)
+}
+
+function yesterdayISO() {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().slice(0, 10)
+}
+
+function timeNow() {
+  return new Date().toTimeString().slice(0, 5)
+}
+
+function loadJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function saveJson(key, value) {
+  localStorage.setItem(key, JSON.stringify(value))
+}
+
+function parseNum(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const n = Number(String(value).replace(',', '.'))
+  return Number.isFinite(n) ? n : null
+}
+
+function formatDate(dateText) {
+  if (!dateText) return ''
+  return new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${dateText}T12:00:00`))
+}
+
+function hasRange(ref) {
+  return [ref?.sufficientMin, ref?.sufficientMax, ref?.idealMin, ref?.idealMax].some((v) => parseNum(v) !== null)
+}
+
+function inRange(value, min, max) {
+  const lo = parseNum(min)
+  const hi = parseNum(max)
+  if (lo !== null && value < lo) return false
+  if (hi !== null && value > hi) return false
+  return true
+}
+
+function getStatus(value, ref) {
+  const n = parseNum(value)
+  if (n === null) return 'empty'
+  if (!hasRange(ref)) return 'unknown'
+  const hasIdeal = parseNum(ref?.idealMin) !== null || parseNum(ref?.idealMax) !== null
+  const hasSufficient = parseNum(ref?.sufficientMin) !== null || parseNum(ref?.sufficientMax) !== null
+  if (hasIdeal && inRange(n, ref.idealMin, ref.idealMax)) return 'ideal'
+  if (hasSufficient && inRange(n, ref.sufficientMin, ref.sufficientMax)) return 'sufficient'
+  return 'out'
+}
+
+function statusLabel(status) {
+  return {
+    ideal: 'Ideal',
+    sufficient: 'Suficiente',
+    out: 'Fora do intervalo',
+    unknown: 'Sem referência',
+    empty: 'Sem valor'
+  }[status]
+}
+
+function statusIcon(status) {
+  if (status === 'ideal') return '✓'
+  if (status === 'sufficient') return '•'
+  if (status === 'out') return '!'
+  return '—'
+}
+
+function sortExamDate(a, b) {
+  return `${b.date} ${b.time || '00:00'}`.localeCompare(`${a.date} ${a.time || '00:00'}`)
+}
+
+function toDate(dateText) {
+  return new Date(`${dateText}T12:00:00`)
+}
+
+function daysBetween(a, b) {
+  return Math.round((toDate(a) - toDate(b)) / 86400000)
+}
+
+function average(values) {
+  const valid = values.filter((v) => Number.isFinite(v))
+  if (!valid.length) return null
+  return valid.reduce((a, b) => a + b, 0) / valid.length
+}
+
+function distanceToIdeal(value, ref) {
+  const n = parseNum(value)
+  if (n === null) return null
+  const lo = parseNum(ref?.idealMin)
+  const hi = parseNum(ref?.idealMax)
+  if (lo !== null && n < lo) return lo - n
+  if (hi !== null && n > hi) return n - hi
+  return 0
+}
+
+function classifyImpact(avgYes, avgNo, biomarker, ref) {
+  if (avgYes === null || avgNo === null || Math.abs(avgNo) < 0.00001) return null
+  const direction = ref?.direction || biomarker.direction
+  let score = 0
+  if (direction === 'lower') score = ((avgNo - avgYes) / Math.abs(avgNo)) * 100
+  if (direction === 'higher') score = ((avgYes - avgNo) / Math.abs(avgNo)) * 100
+  if (direction === 'range') {
+    const dy = distanceToIdeal(avgYes, ref)
+    const dn = distanceToIdeal(avgNo, ref)
+    if (dy === null || dn === null || dn < 0.00001) return null
+    score = ((dn - dy) / Math.max(dn, 0.00001)) * 100
+  }
+  return Math.max(-99, Math.min(99, score))
+}
+
+function classNameForStatus(status) {
+  return `pill ${status}`
+}
+
+function titleForTab(tab, selectedBiomarkerId) {
+  if (selectedBiomarkerId) return 'Detalhe do Biomarcador'
+  return {
+    insert: 'Inserir Análises',
+    analysis: 'Resumo da Última Análise',
+    diary: 'Diário Alimentar',
+    impact: 'Impacto dos Comportamentos',
+    more: 'Lista de Biomarcadores'
+  }[tab] || 'Análises + Diário'
+}
+
+function App() {
+  const [tab, setTab] = useState('insert')
+  const [exams, setExams] = useState(() => loadJson(STORAGE.exams, []))
+  const [diary, setDiary] = useState(() => loadJson(STORAGE.diary, []))
+  const [behaviours, setBehaviours] = useState(() => loadJson(STORAGE.behaviours, defaultBehaviours))
+  const [refs, setRefs] = useState(() => loadJson(STORAGE.refs, defaultReferences))
+  const [selectedBiomarkerId, setSelectedBiomarkerId] = useState(null)
+  const importInput = useRef(null)
+
+  useEffect(() => saveJson(STORAGE.exams, exams), [exams])
+  useEffect(() => saveJson(STORAGE.diary, diary), [diary])
+  useEffect(() => saveJson(STORAGE.behaviours, behaviours), [behaviours])
+  useEffect(() => saveJson(STORAGE.refs, refs), [refs])
+
+  const latestExam = useMemo(() => [...exams].sort(sortExamDate)[0] || null, [exams])
+
+  function exportData() {
+    const payload = { exams, diary, behaviours, refs, exportedAt: new Date().toISOString(), version: 3 }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `backup-analises-diario-${todayISO()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function importData(file) {
+    if (!file) return
+    const text = await file.text()
+    const data = JSON.parse(text)
+    if (Array.isArray(data.exams)) setExams(data.exams)
+    if (Array.isArray(data.diary)) setDiary(data.diary)
+    if (Array.isArray(data.behaviours)) setBehaviours(data.behaviours)
+    if (data.refs) setRefs(data.refs)
+  }
+
+  function goTo(nextTab) {
+    setSelectedBiomarkerId(null)
+    setTab(nextTab)
+  }
+
+  return (
+    <div className="app-shell">
+      <div className="soft-glow" />
+      <header className="topbar">
+        <button className="nav-icon" onClick={() => selectedBiomarkerId ? setSelectedBiomarkerId(null) : goTo('analysis')} aria-label="Voltar">‹</button>
+        <div className="top-title">
+          <h1>{titleForTab(tab, selectedBiomarkerId)}</h1>
+          {latestExam && tab !== 'insert' && <p>{formatDate(latestExam.date)} · {latestExam.time}</p>}
+        </div>
+        <button className="nav-icon" onClick={() => goTo('more')} aria-label="Mais"><Info size={18} /></button>
+      </header>
+
+      <main className="content">
+        {tab === 'insert' && <InsertExamView refs={refs} setRefs={setRefs} exams={exams} setExams={setExams} />}
+        {tab === 'analysis' && selectedBiomarkerId && <BiomarkerDetail id={selectedBiomarkerId} exams={exams} refs={refs} onBack={() => setSelectedBiomarkerId(null)} />}
+        {tab === 'analysis' && !selectedBiomarkerId && <AnalysisView latestExam={latestExam} refs={refs} onSelect={setSelectedBiomarkerId} />}
+        {tab === 'diary' && <DiaryView diary={diary} setDiary={setDiary} behaviours={behaviours} setBehaviours={setBehaviours} />}
+        {tab === 'impact' && <ImpactView exams={exams} diary={diary} behaviours={behaviours} refs={refs} />}
+        {tab === 'more' && <MoreView refs={refs} setRefs={setRefs} exportData={exportData} importData={importData} importInput={importInput} goTo={goTo} />}
+      </main>
+
+      <input ref={importInput} type="file" accept="application/json" hidden onChange={(e) => importData(e.target.files?.[0])} />
+
+      <nav className="bottom-nav">
+        <button className={tab === 'analysis' && !selectedBiomarkerId ? 'active' : ''} onClick={() => goTo('analysis')}><Home size={18} />Resumo</button>
+        <button className={tab === 'insert' ? 'active' : ''} onClick={() => goTo('insert')}><FlaskConical size={18} />Análises</button>
+        <button className="add-button" onClick={() => goTo('insert')} aria-label="Adicionar"><Plus size={28} /></button>
+        <button className={tab === 'diary' ? 'active' : ''} onClick={() => goTo('diary')}><BookOpenCheck size={18} />Diário</button>
+        <button className={tab === 'more' || tab === 'impact' ? 'active' : ''} onClick={() => goTo('more')}><MoreHorizontal size={18} />Mais</button>
+      </nav>
+    </div>
+  )
+}
+
+function InsertExamView({ refs, setRefs, exams, setExams }) {
+  const [examName, setExamName] = useState('')
+  const [date, setDate] = useState(todayISO())
+  const [time, setTime] = useState(timeNow())
+  const [values, setValues] = useState({})
+  const [query, setQuery] = useState('')
+  const [showRefs, setShowRefs] = useState(false)
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return biomarkers
+    return biomarkers.filter((b) => `${b.name} ${b.category}`.toLowerCase().includes(q))
+  }, [query])
+
+  function saveExam() {
+    const normalizedValues = Object.fromEntries(
+      Object.entries(values)
+        .map(([id, value]) => [id, parseNum(value)])
+        .filter(([, value]) => value !== null)
+    )
+    if (!Object.keys(normalizedValues).length) {
+      alert('Insere pelo menos um valor de análise antes de guardar.')
+      return
+    }
+    const record = {
+      id: crypto.randomUUID(),
+      name: examName || `Análise ${date}`,
+      date,
+      time,
+      values: normalizedValues,
+      createdAt: new Date().toISOString()
+    }
+    setExams([record, ...exams])
+    setExamName('')
+    setValues({})
+    alert('Análise guardada.')
+  }
+
+  return (
+    <section className="screen">
+      <div className="intro-card clinical">
+        <div className="intro-icon"><ShieldCheck size={22} /></div>
+        <div>
+          <p className="eyebrow">Registo manual</p>
+          <h2>Inserir valores das análises</h2>
+          <p>Regista os resultados por biomarcador e mantém as referências configuráveis por laboratório.</p>
+        </div>
+      </div>
+
+      <div className="form-grid date-grid">
+        <label>Nome do exame<input value={examName} onChange={(e) => setExamName(e.target.value)} placeholder="Ex.: Análises mensais" /></label>
+        <label><span><CalendarDays size={15} /> Data da recolha</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label><span><Clock3 size={15} /> Hora da recolha</span><input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
+      </div>
+
+      <div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" /></div>
+
+      <button className="secondary-action" onClick={() => setShowRefs(!showRefs)}><SlidersHorizontal size={18} /> {showRefs ? 'Esconder referências' : 'Configurar referências'}</button>
+
+      {showRefs && <ReferenceEditor refs={refs} setRefs={setRefs} />}
+
+      <div className="section-header"><h3>Biomarcadores principais</h3><span>{filtered.length}</span></div>
+      <div className="list-block">
+        {filtered.map((b) => {
+          const status = getStatus(values[b.id], refs[b.id])
+          return (
+            <div className="input-card" key={b.id}>
+              <div className="metric-name">
+                <MetricIcon category={b.category} />
+                <div>
+                  <strong>{b.name}</strong>
+                  <span>{b.unit || 'sem unidade'} · {b.category}</span>
+                </div>
+              </div>
+              <div className="value-entry">
+                <input inputMode="decimal" value={values[b.id] ?? ''} onChange={(e) => setValues({ ...values, [b.id]: e.target.value })} placeholder="Valor" />
+                {values[b.id] !== undefined && <em className={classNameForStatus(status)}>{statusIcon(status)} {statusLabel(status)}</em>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <button className="primary-action sticky-save" onClick={saveExam}><Save size={18} /> Guardar Análise</button>
+    </section>
+  )
+}
+
+function ReferenceEditor({ refs, setRefs }) {
+  const [query, setQuery] = useState('')
+  const filtered = biomarkers.filter((b) => `${b.name} ${b.category}`.toLowerCase().includes(query.toLowerCase()))
+  function patchRef(id, field, value) {
+    setRefs({ ...refs, [id]: { ...(refs[id] || {}), [field]: value } })
+  }
+  return (
+    <div className="reference-panel">
+      <div className="notice">
+        <strong>Referências clínicas</strong>
+        <span>Deixa em branco os intervalos ainda não validados. A classificação só é aplicada quando existir referência.</span>
+      </div>
+      <input className="plain-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrar referências" />
+      {filtered.slice(0, 12).map((b) => {
+        const ref = refs[b.id] || {}
+        return (
+          <div className="reference-row" key={b.id}>
+            <strong>{b.name}</strong>
+            <div className="ref-inputs">
+              <label>Suf. mín<input inputMode="decimal" value={ref.sufficientMin ?? ''} onChange={(e) => patchRef(b.id, 'sufficientMin', e.target.value)} /></label>
+              <label>Suf. máx<input inputMode="decimal" value={ref.sufficientMax ?? ''} onChange={(e) => patchRef(b.id, 'sufficientMax', e.target.value)} /></label>
+              <label>Ideal mín<input inputMode="decimal" value={ref.idealMin ?? ''} onChange={(e) => patchRef(b.id, 'idealMin', e.target.value)} /></label>
+              <label>Ideal máx<input inputMode="decimal" value={ref.idealMax ?? ''} onChange={(e) => patchRef(b.id, 'idealMax', e.target.value)} /></label>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function AnalysisView({ latestExam, refs, onSelect }) {
+  const [query, setQuery] = useState('')
+  const latestValues = latestExam?.values || {}
+  const cards = Object.entries(latestValues).map(([id, value]) => {
+    const biomarker = biomarkers.find((b) => b.id === id)
+    if (!biomarker) return null
+    const status = getStatus(value, refs[id])
+    return { biomarker, value, status }
+  }).filter(Boolean)
+
+  const grouped = {
+    out: cards.filter((c) => c.status === 'out'),
+    sufficient: cards.filter((c) => c.status === 'sufficient'),
+    ideal: cards.filter((c) => c.status === 'ideal'),
+    unknown: cards.filter((c) => c.status === 'unknown')
+  }
+
+  const filteredCards = cards.filter((c) => `${c.biomarker.name} ${c.biomarker.category}`.toLowerCase().includes(query.toLowerCase()))
+  const orderedCards = STATUS_ORDER.flatMap((status) => filteredCards.filter((c) => c.status === status))
+
+  if (!latestExam) {
+    return <EmptyState title="Ainda não existem análises" text="Começa por inserir uma análise. Depois a app mostra aqui o resumo por biomarcador." />
+  }
+
+  return (
+    <section className="screen">
+      <div className="status-grid">
+        <StatusCard label="Fora do intervalo" count={grouped.out.length} status="out" />
+        <StatusCard label="Suficiente" count={grouped.sufficient.length} status="sufficient" />
+        <StatusCard label="Ideal" count={grouped.ideal.length} status="ideal" />
+      </div>
+
+      <div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" /></div>
+
+      <div className="list-block compact-list">
+        {orderedCards.map(({ biomarker, value, status }) => (
+          <button className="metric-card" key={biomarker.id} onClick={() => onSelect(biomarker.id)}>
+            <div>
+              <strong>{biomarker.name}</strong>
+              <b>{value}<small> {biomarker.unit}</small></b>
+            </div>
+            <MiniBar status={status} />
+            <ChevronRight />
+          </button>
+        ))}
+      </div>
+
+      {!orderedCards.length && <EmptyState title="Sem resultados" text="Não existem biomarcadores com esse filtro na última análise." compact />}
+    </section>
+  )
+}
+
+function StatusCard({ label, count, status }) {
+  return (
+    <div className={`status-card ${status}`}>
+      <span>{label}</span>
+      <strong>{count}</strong>
+      <small>biomarcadores</small>
+    </div>
+  )
+}
+
+function MiniBar({ status }) {
+  return <div className={`mini-bar ${status}`}><span /><span /><span /><i /></div>
+}
+
+function BiomarkerDetail({ id, exams, refs, onBack }) {
+  const biomarker = biomarkers.find((b) => b.id === id)
+  const series = [...exams]
+    .filter((e) => parseNum(e.values?.[id]) !== null)
+    .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))
+    .slice(-10)
+    .map((e) => ({ date: e.date, value: parseNum(e.values[id]) }))
+  const last = series[series.length - 1]
+  const status = last ? getStatus(last.value, refs[id]) : 'empty'
+
+  if (!biomarker) return null
+
+  return (
+    <section className="screen detail-screen">
+      <button className="back-button" onClick={onBack}>‹ Voltar</button>
+      <div className="detail-heading">
+        <div>
+          <h2>{biomarker.name}</h2>
+          <p>{biomarker.description}</p>
+        </div>
+        <em className={classNameForStatus(status)}>{statusLabel(status)}</em>
+      </div>
+
+      {last && (
+        <div className="latest-card">
+          <span>Último resultado</span>
+          <strong>{last.value}<small> {biomarker.unit}</small></strong>
+          <em className={classNameForStatus(status)}>{statusIcon(status)} {statusLabel(status)}</em>
+        </div>
+      )}
+
+      <div className="section-header"><h3>Evolução dos últimos 10 resultados</h3></div>
+      <TrendChart series={series} refConfig={refs[id]} unit={biomarker.unit} />
+
+      <div className="note-card">
+        <strong>Notas</strong>
+        <p>Usa a evolução juntamente com o diário alimentar. Esta leitura não substitui validação clínica.</p>
+      </div>
+    </section>
+  )
+}
+
+function TrendChart({ series, refConfig, unit }) {
+  if (series.length < 2) return <EmptyState title="Dados insuficientes" text="São necessárias pelo menos duas entradas deste biomarcador para mostrar evolução." compact />
+  const values = series.map((s) => s.value)
+  const referenceValues = [refConfig?.sufficientMin, refConfig?.sufficientMax, refConfig?.idealMin, refConfig?.idealMax].map(parseNum).filter((v) => v !== null)
+  const min = Math.min(...values, ...referenceValues)
+  const max = Math.max(...values, ...referenceValues)
+  const pad = Math.max((max - min) * 0.18, 1)
+  const yMin = min - pad
+  const yMax = max + pad
+  const x = (idx) => 34 + (idx * (278 / Math.max(series.length - 1, 1)))
+  const y = (v) => 168 - ((v - yMin) / (yMax - yMin)) * 128
+  const points = series.map((s, i) => `${x(i)},${y(s.value)}`).join(' ')
+  const idealLo = parseNum(refConfig?.idealMin)
+  const idealHi = parseNum(refConfig?.idealMax)
+  const sufficientLo = parseNum(refConfig?.sufficientMin)
+  const sufficientHi = parseNum(refConfig?.sufficientMax)
+
+  return (
+    <div className="chart-card">
+      <svg viewBox="0 0 350 226" role="img" aria-label="Evolução do biomarcador">
+        <rect x="30" y="36" width="294" height="132" className="band-out-top" />
+        <rect x="30" y="88" width="294" height="48" className="band-neutral" />
+        <rect x="30" y="136" width="294" height="32" className="band-out-bottom" />
+        {sufficientLo !== null && sufficientHi !== null && <rect x="30" y={y(sufficientHi)} width="294" height={Math.max(4, y(sufficientLo) - y(sufficientHi))} className="band-sufficient" />}
+        {idealLo !== null && idealHi !== null && <rect x="30" y={y(idealHi)} width="294" height={Math.max(4, y(idealLo) - y(idealHi))} className="band-ideal" />}
+        <line x1="30" y1="168" x2="324" y2="168" className="axis" />
+        <line x1="30" y1="36" x2="30" y2="168" className="axis" />
+        <polyline points={points} fill="none" className="trend-line" />
+        {series.map((s, i) => <g key={`${s.date}-${i}`}><circle cx={x(i)} cy={y(s.value)} r="4.8" className="trend-point" /></g>)}
+        <text x="30" y="24" className="axis-label">{yMax.toFixed(1)}</text>
+        <text x="30" y="194" className="axis-label">{yMin.toFixed(1)}</text>
+        <text x="328" y="56" className="range-label out">Acima</text>
+        <text x="328" y="113" className="range-label ideal">Ideal</text>
+        <text x="328" y="155" className="range-label out">Abaixo</text>
+      </svg>
+      <div className="chart-dates">{series.map((s, i) => <span key={`${s.date}-label-${i}`}>{s.date.slice(5).replace('-', '/')}</span>)}</div>
+      <small className="chart-unit">Unidade: {unit || 'sem unidade'}</small>
+    </div>
+  )
+}
+
+function DiaryView({ diary, setDiary, behaviours, setBehaviours }) {
+  const [date, setDate] = useState(yesterdayISO())
+  const [values, setValues] = useState({})
+  const [note, setNote] = useState('')
+  const [newBehaviour, setNewBehaviour] = useState('')
+
+  useEffect(() => {
+    const existing = diary.filter((d) => d.date === date)
+    setValues(Object.fromEntries(existing.filter((d) => d.behaviourId !== '__note__').map((d) => [d.behaviourId, d.value])))
+    setNote(existing.find((d) => d.behaviourId === '__note__')?.note || '')
+  }, [date, diary])
+
+  function setAnswer(id, value) {
+    setValues({ ...values, [id]: value })
+  }
+
+  function addBehaviour() {
+    const label = newBehaviour.trim()
+    if (!label) return
+    const id = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || crypto.randomUUID()
+    if (behaviours.some((b) => b.id === id)) return
+    setBehaviours([...behaviours, { id, label, category: 'Personalizado' }])
+    setNewBehaviour('')
+  }
+
+  function saveDiary() {
+    const otherDays = diary.filter((d) => d.date !== date)
+    const dayRows = behaviours.map((b) => ({ date, behaviourId: b.id, label: b.label, value: values[b.id] ?? null }))
+    const noteRow = { date, behaviourId: '__note__', label: 'Nota diária', value: null, note }
+    setDiary([...otherDays, ...dayRows, noteRow])
+    alert('Diário guardado.')
+  }
+
+  return (
+    <section className="screen">
+      <div className="date-switch">
+        <button onClick={() => setDate(shiftDate(date, -1))}>‹</button>
+        <label>Data de referência<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <button onClick={() => setDate(shiftDate(date, 1))}>›</button>
+      </div>
+
+      <div className="section-header"><h3>Comportamentos do dia anterior</h3></div>
+      <div className="diary-list">
+        {behaviours.map((b) => (
+          <div className="diary-row" key={b.id}>
+            <span>{b.label}</span>
+            <div>
+              <button className={values[b.id] === false ? 'no active' : 'no'} onClick={() => setAnswer(b.id, false)}><X size={14} />Não</button>
+              <button className={values[b.id] === true ? 'yes active' : 'yes'} onClick={() => setAnswer(b.id, true)}><Check size={14} />Sim</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="note-field">
+        <label>Notas</label>
+        <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 300))} placeholder="Escreve algo sobre o dia..." />
+        <small>{note.length}/300</small>
+      </div>
+
+      <div className="add-row">
+        <input value={newBehaviour} onChange={(e) => setNewBehaviour(e.target.value)} placeholder="Adicionar comportamento" />
+        <button onClick={addBehaviour}><Plus size={18} /></button>
+      </div>
+      <button className="primary-action" onClick={saveDiary}><Save size={18} /> Guardar Diário</button>
+    </section>
+  )
+}
+
+function shiftDate(dateText, delta) {
+  const d = toDate(dateText)
+  d.setDate(d.getDate() + delta)
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().slice(0, 10)
+}
+
+function ImpactView({ exams, diary, behaviours, refs }) {
+  const [selected, setSelected] = useState('fosforo_inorganico')
+  const [windowDays, setWindowDays] = useState(7)
+  const biomarker = biomarkers.find((b) => b.id === selected) || biomarkers[0]
+
+  const impactRows = useMemo(() => {
+    return behaviours.map((behaviour) => {
+      const yesValues = []
+      const noValues = []
+      exams.forEach((exam) => {
+        const value = parseNum(exam.values?.[biomarker.id])
+        if (value === null) return
+        const related = diary.filter((d) => d.behaviourId === behaviour.id && daysBetween(exam.date, d.date) >= 0 && daysBetween(exam.date, d.date) <= Number(windowDays))
+        if (!related.length) return
+        const hadYes = related.some((d) => d.value === true)
+        const hadOnlyNo = related.every((d) => d.value === false)
+        if (hadYes) yesValues.push(value)
+        if (hadOnlyNo) noValues.push(value)
+      })
+      const avgYes = average(yesValues)
+      const avgNo = average(noValues)
+      const score = classifyImpact(avgYes, avgNo, biomarker, refs[biomarker.id])
+      return { behaviour, avgYes, avgNo, yesCount: yesValues.length, noCount: noValues.length, score }
+    }).sort((a, b) => Math.abs(b.score ?? 0) - Math.abs(a.score ?? 0))
+  }, [behaviours, exams, diary, biomarker, refs, windowDays])
+
+  return (
+    <section className="screen">
+      <div className="form-grid compact-grid">
+        <label>Biomarcador<select value={selected} onChange={(e) => setSelected(e.target.value)}>{biomarkers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+        <label>Janela de análise<input type="number" min="1" max="90" value={windowDays} onChange={(e) => setWindowDays(e.target.value)} /></label>
+      </div>
+
+      <div className="impact-legend"><span>Prejudica</span><strong>Impacto</strong><span>Ajuda</span></div>
+      <div className="impact-list">
+        {impactRows.map((row) => <ImpactRow key={row.behaviour.id} row={row} />)}
+      </div>
+
+      <div className="info-card">
+        <Sparkle />
+        <p>Análise baseada nos registos disponíveis. Usa como pista inicial e não como conclusão clínica.</p>
+      </div>
+    </section>
+  )
+}
+
+function ImpactRow({ row }) {
+  const score = row.score
+  const valid = score !== null && row.yesCount >= 1 && row.noCount >= 1
+  const normalized = Math.max(-1, Math.min(1, (score || 0) / 30))
+  const label = !valid ? '—' : `${score > 0 ? '+' : ''}${score.toFixed(1)}%`
+  return (
+    <div className="impact-row">
+      <strong>{row.behaviour.label}</strong>
+      <div className="impact-scale">
+        <i />
+        <span className={valid && score >= 0 ? 'positive' : 'negative'} style={{ transform: `translateX(${normalized * 92}px)` }} />
+      </div>
+      <b className={valid && score >= 0 ? 'positive' : 'negative'}>{label}</b>
+    </div>
+  )
+}
+
+function MoreView({ refs, setRefs, exportData, importData, importInput, goTo }) {
+  const [showRefs, setShowRefs] = useState(false)
+  const [query, setQuery] = useState('')
+  const groups = useMemo(() => {
+    const visible = biomarkers.filter((b) => `${b.name} ${b.category}`.toLowerCase().includes(query.toLowerCase()))
+    return visible.reduce((acc, item) => {
+      acc[item.category] = acc[item.category] || []
+      acc[item.category].push(item)
+      return acc
+    }, {})
+  }, [query])
+
+  return (
+    <section className="screen">
+      <div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" /></div>
+
+      <div className="category-grid">
+        {Object.entries(groups).map(([category, items]) => (
+          <div className="category-card" key={category}>
+            <MetricIcon category={category} />
+            <div>
+              <strong>{category}</strong>
+              <span>{items.length} indicadores</span>
+            </div>
+            <ChevronRight size={18} />
+          </div>
+        ))}
+      </div>
+
+      <div className="section-header"><h3>Ferramentas</h3></div>
+      <div className="tool-grid">
+        <button onClick={() => importInput.current?.click()}><Upload size={18} /> Importar backup</button>
+        <button onClick={exportData}><Download size={18} /> Exportar backup</button>
+        <button onClick={() => setShowRefs(!showRefs)}><SlidersHorizontal size={18} /> Referências</button>
+        <button onClick={() => window.open('/templates/template_base_dados_analises_diario.xlsx', '_blank')}><FileSpreadsheet size={18} /> Template Excel</button>
+        <button onClick={() => goTo('impact')}><Activity size={18} /> Análise de impacto</button>
+      </div>
+
+      {showRefs && <ReferenceEditor refs={refs} setRefs={setRefs} />}
+    </section>
+  )
+}
+
+function MetricIcon({ category }) {
+  const c = category.toLowerCase()
+  let icon = '◇'
+  if (c.includes('hemograma')) icon = '○'
+  if (c.includes('ferro')) icon = '◌'
+  if (c.includes('rim') || c.includes('diálise')) icon = '♢'
+  if (c.includes('fígado')) icon = '⌁'
+  if (c.includes('lípidos')) icon = '♡'
+  if (c.includes('glicose')) icon = '◐'
+  if (c.includes('mineral') || c.includes('eletrólitos')) icon = '△'
+  return <span className="metric-icon">{icon}</span>
+}
+
+function Sparkle() {
+  return <span className="sparkle">✦</span>
+}
+
+function EmptyState({ title, text, compact = false }) {
+  return <div className={compact ? 'empty compact' : 'empty'}><strong>{title}</strong><p>{text}</p></div>
+}
+
+export default App
