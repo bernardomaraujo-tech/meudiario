@@ -407,3 +407,290 @@ svg text { font-size: 10px; font-weight: 850; }
   .category-grid { grid-template-columns: 1fr; }
   .impact-row { grid-template-columns: 72px 1fr 46px; }
 }
+
+button:focus { outline: none; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid rgba(34, 117, 232, .35);
+  outline-offset: 2px;
+}
+
+.category-card {
+  border: 1px solid var(--line);
+  text-align: left;
+  min-height: 62px;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.category-card:hover {
+  transform: translateY(-1px);
+  border-color: #c9ddeb;
+  box-shadow: 0 14px 34px rgba(31, 75, 116, 0.13);
+}
+.category-card .metric-icon {
+  background: linear-gradient(135deg, #eef6ff, #e8f7f4);
+  color: #1f6fd0;
+  font-size: 10px;
+  letter-spacing: -.02em;
+}
+
+.back-line {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-weight: 900;
+  padding: 4px 2px;
+}
+
+.category-detail-header {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #ffffff, #eef8ff);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.category-detail-header h2 {
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: -.04em;
+}
+.category-detail-header span {
+  color: var(--muted);
+  font-weight: 750;
+  font-size: 13px;
+}
+.category-detail-header .metric-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+}
+
+.biomarker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.biomarker-list-card {
+  display: grid;
+  grid-template-columns: 1fr 20px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255,255,255,.94);
+  box-shadow: var(--shadow);
+  padding: 13px;
+}
+.biomarker-list-card strong {
+  display: block;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.15;
+}
+.biomarker-list-card span {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 850;
+}
+.biomarker-list-card p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.biomarker-list-card svg {
+  color: #8293a7;
+}
+
+.status-grid.two-cols {
+  grid-template-columns: 1fr 1fr;
+}
+
+.followup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.followup-card {
+  background: rgba(255, 255, 255, .94);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.followup-card.out {
+  border-color: rgba(240, 96, 96, .28);
+  background: linear-gradient(135deg, #ffffff, #fff7f7);
+}
+
+.followup-card.sufficient {
+  border-color: rgba(247, 169, 69, .34);
+  background: linear-gradient(135deg, #ffffff, #fffaf0);
+}
+
+.followup-main {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.followup-main strong {
+  display: block;
+  font-size: 15px;
+  color: var(--text);
+  letter-spacing: -.01em;
+}
+
+.followup-main span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.followup-main b {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+  color: #10223a;
+  letter-spacing: -.03em;
+}
+
+.followup-main small {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.followup-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.followup-actions button {
+  border: 1px solid #d9e5ee;
+  background: #ffffff;
+  color: #1f4b74;
+  border-radius: 14px;
+  min-height: 42px;
+  font-weight: 850;
+}
+
+.followup-actions button.primary-mini {
+  border-color: rgba(34, 117, 232, .2);
+  background: var(--blue);
+  color: #ffffff;
+}
+
+.followup-focus {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.followup-focus.out {
+  border-color: rgba(240, 96, 96, .28);
+  background: linear-gradient(135deg, #ffffff, #fff7f7);
+}
+
+.followup-focus.sufficient {
+  border-color: rgba(247, 169, 69, .34);
+  background: linear-gradient(135deg, #ffffff, #fffaf0);
+}
+
+.followup-focus span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.followup-focus strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 26px;
+  letter-spacing: -.04em;
+}
+
+.followup-focus small {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.suggestion-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.suggestion-card {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.suggestion-card.negative {
+  border-color: rgba(240, 96, 96, .25);
+  background: linear-gradient(135deg, #ffffff, #fff1f1);
+}
+
+.suggestion-card.positive {
+  border-color: rgba(47, 191, 145, .25);
+  background: linear-gradient(135deg, #ffffff, #f0fbf7);
+}
+
+.suggestion-card.neutral {
+  background: linear-gradient(135deg, #ffffff, #f6f9fc);
+}
+
+.suggestion-card strong {
+  display: block;
+  font-size: 14px;
+  color: #10223a;
+}
+
+.suggestion-card p {
+  margin: 8px 0 4px;
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 850;
+}
+
+.suggestion-card span {
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.info-card.warning-soft {
+  background: linear-gradient(135deg, #ffffff, #f7fbff);
+  border-color: #d6e6f5;
+}
+
+.tool-grid.single {
+  grid-template-columns: 1fr;
+}
