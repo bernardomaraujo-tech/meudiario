@@ -285,18 +285,22 @@ input::placeholder, textarea::placeholder { color: #9aaabc; }
 .latest-card strong { display: block; margin: 6px 0 8px; font-size: 36px; letter-spacing: -0.05em; }
 .latest-card small { font-size: 16px; color: #4d6178; }
 .chart-card { border-radius: 22px; padding: 12px; overflow: hidden; }
+.chart-card svg { width: 100%; height: auto; display: block; }
 svg text { font-size: 10px; font-weight: 850; }
 .axis { stroke: rgba(95, 118, 145, 0.26); stroke-width: 1; }
 .axis-label { fill: #788da2; }
 .band-out-top { fill: rgba(255, 112, 109, .11); }
 .band-neutral { fill: rgba(47, 191, 145, .08); }
 .band-out-bottom { fill: rgba(247, 169, 69, .12); }
-.band-sufficient { fill: rgba(247, 169, 69, .18); }
-.band-ideal { fill: rgba(47, 191, 145, .19); }
+.band-sufficient { fill: rgba(90, 175, 225, .14); }
+.band-reference { fill: rgba(47, 191, 145, .16); }
+.band-ideal { fill: rgba(47, 191, 145, .21); }
+.reference-line { stroke: rgba(20, 116, 90, .30); stroke-width: 1; stroke-dasharray: 4 4; }
 .trend-line { stroke: #2275e8; stroke-width: 2.7; }
 .trend-point { fill: #fff; stroke: #2275e8; stroke-width: 2.7; }
 .range-label.out { fill: #f06060; }
 .range-label.ideal { fill: #209d79; }
+.range-label.sufficient { fill: #2675a8; }
 .chart-dates { display: flex; justify-content: space-between; gap: 6px; color: #7c8fa4; font-size: 10px; font-weight: 750; padding: 0 2px; }
 .chart-unit { display: block; margin-top: 8px; color: var(--muted); font-weight: 700; }
 .note-card { border-radius: 18px; padding: 14px; }

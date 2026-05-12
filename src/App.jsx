@@ -85,7 +85,12 @@ function parseNum(value) {
 
 function formatDate(dateText) {
   if (!dateText) return ''
-  return new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${dateText}T12:00:00`))
+  return new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${dateText}T12:00:00`))
+}
+
+function formatDateShort(dateText) {
+  if (!dateText) return ''
+  return new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit' }).format(new Date(`${dateText}T12:00:00`))
 }
 
 function hasRange(ref) {
@@ -535,42 +540,144 @@ function BiomarkerDetail({ id, exams, refs, onBack }) {
   )
 }
 
-function TrendChart({ series, refConfig, unit }) {
-  if (series.length < 2) return <EmptyState title="Dados insuficientes" text="São necessárias pelo menos duas entradas deste biomarcador para mostrar evolução." compact />
-  const values = series.map((s) => s.value)
-  const referenceValues = [refConfig?.sufficientMin, refConfig?.sufficientMax, refConfig?.idealMin, refConfig?.idealMax].map(parseNum).filter((v) => v !== null)
-  const min = Math.min(...values, ...referenceValues)
-  const max = Math.max(...values, ...referenceValues)
-  const pad = Math.max((max - min) * 0.18, 1)
-  const yMin = min - pad
-  const yMax = max + pad
-  const x = (idx) => 34 + (idx * (278 / Math.max(series.length - 1, 1)))
-  const y = (v) => 168 - ((v - yMin) / (yMax - yMin)) * 128
-  const points = series.map((s, i) => `${x(i)},${y(s.value)}`).join(' ')
+function formatReferenceValue(value) {
+  const n = parseNum(value)
+  if (n === null) return null
+  return Number.isInteger(n) ? String(n) : String(n).replace('.', ',')
+}
+
+function referenceBand(refConfig) {
   const idealLo = parseNum(refConfig?.idealMin)
   const idealHi = parseNum(refConfig?.idealMax)
   const sufficientLo = parseNum(refConfig?.sufficientMin)
   const sufficientHi = parseNum(refConfig?.sufficientMax)
 
+  const idealComplete = idealLo !== null && idealHi !== null
+  const sufficientComplete = sufficientLo !== null && sufficientHi !== null
+
+  if (idealComplete) {
+    return {
+      label: 'Ideal',
+      lo: idealLo,
+      hi: idealHi,
+      display: `${formatReferenceValue(idealLo)}–${formatReferenceValue(idealHi)}`,
+      sufficientLo,
+      sufficientHi
+    }
+  }
+
+  if (sufficientComplete) {
+    return {
+      label: 'Suficiente',
+      lo: sufficientLo,
+      hi: sufficientHi,
+      display: `${formatReferenceValue(sufficientLo)}–${formatReferenceValue(sufficientHi)}`,
+      sufficientLo,
+      sufficientHi
+    }
+  }
+
+  return {
+    label: 'Referência',
+    lo: idealLo ?? sufficientLo,
+    hi: idealHi ?? sufficientHi,
+    display: 'Sem intervalo',
+    sufficientLo,
+    sufficientHi
+  }
+}
+
+function TrendChart({ series, refConfig, unit }) {
+  if (series.length < 2) return <EmptyState title="Dados insuficientes" text="São necessárias pelo menos duas entradas deste biomarcador para mostrar evolução." compact />
+
+  const band = referenceBand(refConfig)
+  const values = series.map((s) => s.value)
+  const referenceValues = [refConfig?.sufficientMin, refConfig?.sufficientMax, refConfig?.idealMin, refConfig?.idealMax]
+    .map(parseNum)
+    .filter((v) => v !== null)
+
+  const min = Math.min(...values, ...referenceValues)
+  const max = Math.max(...values, ...referenceValues)
+  const pad = Math.max((max - min) * 0.22, 1)
+  const yMin = min - pad
+  const yMax = max + pad
+  const plot = { x: 36, y: 28, w: 242, h: 142 }
+  const x = (idx) => plot.x + (idx * (plot.w / Math.max(series.length - 1, 1)))
+  const y = (v) => plot.y + plot.h - ((v - yMin) / (yMax - yMin)) * plot.h
+  const clampY = (v) => Math.max(plot.y, Math.min(plot.y + plot.h, y(v)))
+  const points = series.map((s, i) => `${x(i)},${y(s.value)}`).join(' ')
+
+  const hasMainBand = band.lo !== null && band.hi !== null
+  const mainTop = hasMainBand ? clampY(band.hi) : null
+  const mainBottom = hasMainBand ? clampY(band.lo) : null
+  const sufficientComplete = band.sufficientLo !== null && band.sufficientHi !== null
+  const sufficientTop = sufficientComplete ? clampY(band.sufficientHi) : null
+  const sufficientBottom = sufficientComplete ? clampY(band.sufficientLo) : null
+
   return (
     <div className="chart-card">
-      <svg viewBox="0 0 350 226" role="img" aria-label="Evolução do biomarcador">
-        <rect x="30" y="36" width="294" height="132" className="band-out-top" />
-        <rect x="30" y="88" width="294" height="48" className="band-neutral" />
-        <rect x="30" y="136" width="294" height="32" className="band-out-bottom" />
-        {sufficientLo !== null && sufficientHi !== null && <rect x="30" y={y(sufficientHi)} width="294" height={Math.max(4, y(sufficientLo) - y(sufficientHi))} className="band-sufficient" />}
-        {idealLo !== null && idealHi !== null && <rect x="30" y={y(idealHi)} width="294" height={Math.max(4, y(idealLo) - y(idealHi))} className="band-ideal" />}
-        <line x1="30" y1="168" x2="324" y2="168" className="axis" />
-        <line x1="30" y1="36" x2="30" y2="168" className="axis" />
+      <svg viewBox="0 0 390 232" role="img" aria-label="Evolução do biomarcador">
+        <rect x={plot.x} y={plot.y} width={plot.w} height={plot.h} className="band-out-top" />
+
+        {sufficientComplete && (
+          <rect
+            x={plot.x}
+            y={sufficientTop}
+            width={plot.w}
+            height={Math.max(4, sufficientBottom - sufficientTop)}
+            className="band-sufficient"
+          />
+        )}
+
+        {hasMainBand && (
+          <rect
+            x={plot.x}
+            y={mainTop}
+            width={plot.w}
+            height={Math.max(4, mainBottom - mainTop)}
+            className={band.label === 'Ideal' ? 'band-ideal' : 'band-reference'}
+          />
+        )}
+
+        <line x1={plot.x} y1={plot.y + plot.h} x2={plot.x + plot.w} y2={plot.y + plot.h} className="axis" />
+        <line x1={plot.x} y1={plot.y} x2={plot.x} y2={plot.y + plot.h} className="axis" />
+
+        {hasMainBand && (
+          <>
+            <line x1={plot.x} y1={mainTop} x2={plot.x + plot.w} y2={mainTop} className="reference-line" />
+            <line x1={plot.x} y1={mainBottom} x2={plot.x + plot.w} y2={mainBottom} className="reference-line" />
+          </>
+        )}
+
         <polyline points={points} fill="none" className="trend-line" />
         {series.map((s, i) => <g key={`${s.date}-${i}`}><circle cx={x(i)} cy={y(s.value)} r="4.8" className="trend-point" /></g>)}
-        <text x="30" y="24" className="axis-label">{yMax.toFixed(1)}</text>
-        <text x="30" y="194" className="axis-label">{yMin.toFixed(1)}</text>
-        <text x="328" y="56" className="range-label out">Acima</text>
-        <text x="328" y="113" className="range-label ideal">Ideal</text>
-        <text x="328" y="155" className="range-label out">Abaixo</text>
+
+        <text x={plot.x} y="18" className="axis-label">{yMax.toFixed(1)}</text>
+        <text x={plot.x} y="204" className="axis-label">{yMin.toFixed(1)}</text>
+
+        {hasMainBand ? (
+          <>
+            <text x="292" y={Math.max(40, mainTop - 10)} className="range-label out">
+              <tspan x="292">Acima</tspan>
+              <tspan x="292" dy="13">&gt; {formatReferenceValue(band.hi)}</tspan>
+            </text>
+            <text x="292" y={(mainTop + mainBottom) / 2 - 6} className={band.label === 'Ideal' ? 'range-label ideal' : 'range-label sufficient'}>
+              <tspan x="292">{band.label}</tspan>
+              <tspan x="292" dy="13">{band.display}</tspan>
+            </text>
+            <text x="292" y={Math.min(166, mainBottom + 18)} className="range-label out">
+              <tspan x="292">Abaixo</tspan>
+              <tspan x="292" dy="13">&lt; {formatReferenceValue(band.lo)}</tspan>
+            </text>
+          </>
+        ) : (
+          <text x="292" y="112" className="range-label sufficient">
+            <tspan x="292">Sem</tspan>
+            <tspan x="292" dy="13">referência</tspan>
+          </text>
+        )}
       </svg>
-      <div className="chart-dates">{series.map((s, i) => <span key={`${s.date}-label-${i}`}>{s.date.slice(5).replace('-', '/')}</span>)}</div>
+      <div className="chart-dates">{series.map((s, i) => <span key={`${s.date}-label-${i}`}>{formatDateShort(s.date)}</span>)}</div>
       <small className="chart-unit">Unidade: {unit || 'sem unidade'}</small>
     </div>
   )
