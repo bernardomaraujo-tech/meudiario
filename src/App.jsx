@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   BookOpenCheck,
@@ -7,8 +7,6 @@ import {
   ChevronRight,
   Clock3,
   Database,
-  Download,
-  FileSpreadsheet,
   FlaskConical,
   Home,
   Info,
@@ -19,7 +17,6 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
-  Upload,
   X
 } from 'lucide-react'
 import { biomarkers, defaultBehaviours, defaultReferences } from './data/biomarkers.js'
@@ -212,7 +209,6 @@ function App() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Ligado' : 'Não configurado')
   const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'A cloud está pronta a sincronizar.' : 'Configura o Apps Script para ativar a sincronização.')
-  const importInput = useRef(null)
 
   useEffect(() => saveJson(STORAGE.exams, exams), [exams])
   useEffect(() => saveJson(STORAGE.diary, diary), [diary])
@@ -221,32 +217,6 @@ function App() {
 
   const latestExam = useMemo(() => [...exams].sort(sortExamDate)[0] || null, [exams])
   const selectedExam = useMemo(() => exams.find((exam) => exam.id === selectedExamId) || latestExam || null, [exams, selectedExamId, latestExam])
-
-  function exportData() {
-    const payload = { exams, diary, behaviours, refs, exportedAt: new Date().toISOString(), version: 3 }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `backup-analises-diario-${todayISO()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  async function importData(file) {
-    if (!file) return
-    const text = await file.text()
-    const data = JSON.parse(text)
-    const nextExams = Array.isArray(data.exams) ? data.exams : exams
-    const nextDiary = Array.isArray(data.diary) ? data.diary : diary
-    const nextBehaviours = Array.isArray(data.behaviours) ? data.behaviours : behaviours
-    const nextRefs = data.refs || refs
-    if (Array.isArray(data.exams)) setExams(data.exams)
-    if (Array.isArray(data.diary)) setDiary(data.diary)
-    if (Array.isArray(data.behaviours)) setBehaviours(data.behaviours)
-    if (data.refs) setRefs(data.refs)
-    await syncCloudSnapshot({ exams: nextExams, diary: nextDiary, behaviours: nextBehaviours, refs: nextRefs })
-  }
 
   async function loadCloudData() {
     if (!isCloudConfigured()) {
@@ -341,17 +311,15 @@ function App() {
         {tab === 'analysis' && !selectedBiomarkerId && <AnalysisView exam={selectedExam} refs={refs} onSelect={setSelectedBiomarkerId} />}
         {tab === 'diary' && <DiaryView diary={diary} setDiary={setDiary} behaviours={behaviours} setBehaviours={setBehaviours} syncCloudSnapshot={syncCloudSnapshot} />}
         {tab === 'impact' && <ImpactView exams={exams} diary={diary} behaviours={behaviours} refs={refs} latestExam={latestExam} initialSelected={impactBiomarkerId} />}
-        {tab === 'more' && <MoreView latestExam={latestExam} refs={refs} setRefs={setRefs} exportData={exportData} importData={importData} importInput={importInput} goTo={goTo} onSelectBiomarker={(id) => { setSelectedBiomarkerId(id); setTab('analysis') }} onAnalyseImpact={analyseImpactFor} cloudStatus={cloudStatus} cloudMessage={cloudMessage} loadCloudData={loadCloudData} syncCloudSnapshot={syncCloudSnapshot} />}
+        {tab === 'more' && <MoreView latestExam={latestExam} refs={refs} setRefs={setRefs} goTo={goTo} onSelectBiomarker={(id) => { setSelectedBiomarkerId(id); setTab('analysis') }} onAnalyseImpact={analyseImpactFor} cloudStatus={cloudStatus} cloudMessage={cloudMessage} loadCloudData={loadCloudData} syncCloudSnapshot={syncCloudSnapshot} />}
       </main>
 
-      <input ref={importInput} type="file" accept="application/json" hidden onChange={(e) => importData(e.target.files?.[0])} />
 
       {quickAddOpen && (
         <QuickAddSheet
           onClose={() => setQuickAddOpen(false)}
           onNewExam={() => { setQuickAddOpen(false); setSelectedExamId(null); setTab('insert') }}
           onNewDiary={() => { setQuickAddOpen(false); setTab('diary') }}
-          onImport={() => { setQuickAddOpen(false); importInput.current?.click() }}
         />
       )}
 
@@ -587,7 +555,7 @@ function HistoryView({ exams, refs, onOpenExam, onNewExam }) {
   )
 }
 
-function QuickAddSheet({ onClose, onNewExam, onNewDiary, onImport }) {
+function QuickAddSheet({ onClose, onNewExam, onNewDiary }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="quick-sheet" onClick={(e) => e.stopPropagation()}>
@@ -599,7 +567,6 @@ function QuickAddSheet({ onClose, onNewExam, onNewDiary, onImport }) {
         <div className="quick-grid">
           <button className="quick-card" onClick={onNewExam}><FlaskConical size={20} /><strong>Nova análise</strong><span>Inserir resultados manualmente</span></button>
           <button className="quick-card" onClick={onNewDiary}><BookOpenCheck size={20} /><strong>Novo diário</strong><span>Registar comportamentos do dia</span></button>
-          <button className="quick-card wide" onClick={onImport}><Upload size={20} /><strong>Importar backup</strong><span>Carregar dados exportados anteriormente</span></button>
         </div>
       </div>
     </div>
@@ -976,9 +943,6 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
     return (
       <section className="screen">
         <EmptyState title="Sem biomarcadores a acompanhar" text="Na última análise não existem biomarcadores fora do intervalo. A análise de impacto fica disponível quando existir algum ponto prioritário a acompanhar." />
-        <div className="tool-grid single">
-          <button onClick={() => window.open(`${import.meta.env.BASE_URL}templates/template_base_dados_analises_diario.xlsx`, '_blank')}><FileSpreadsheet size={18} /> Template Excel</button>
-        </div>
       </section>
     )
   }
@@ -1064,7 +1028,7 @@ function ImpactRow({ row }) {
   )
 }
 
-function MoreView({ latestExam, refs, setRefs, exportData, importData, importInput, goTo, onSelectBiomarker, onAnalyseImpact, cloudStatus, cloudMessage, loadCloudData, syncCloudSnapshot }) {
+function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalyseImpact, cloudStatus, cloudMessage, loadCloudData, syncCloudSnapshot }) {
   const [showRefs, setShowRefs] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -1087,18 +1051,6 @@ function MoreView({ latestExam, refs, setRefs, exportData, importData, importInp
           <p className="eyebrow">Acompanhamento</p>
           <h2>Estado dos biomarcadores</h2>
           <p>Esta área mostra os biomarcadores da última análise em dois estados: fora do intervalo ou ideal.</p>
-        </div>
-      </div>
-
-      <div className="cloud-card">
-        <div>
-          <span>Cloud Google Sheets</span>
-          <strong>{cloudStatus}</strong>
-          <p>{cloudMessage}</p>
-        </div>
-        <div className="cloud-actions">
-          <button onClick={loadCloudData}>Carregar cloud</button>
-          <button onClick={() => syncCloudSnapshot?.()}>Guardar cloud</button>
         </div>
       </div>
 
@@ -1142,11 +1094,15 @@ function MoreView({ latestExam, refs, setRefs, exportData, importData, importInp
 
       <div className="section-header"><h3>Ferramentas</h3></div>
       <div className="tool-grid">
-        <button onClick={() => importInput.current?.click()}><Upload size={18} /> Importar backup</button>
-        <button onClick={exportData}><Download size={18} /> Exportar backup</button>
+        <button onClick={loadCloudData}><Database size={18} /> Carregar cloud</button>
+        <button onClick={() => syncCloudSnapshot?.()}><Save size={18} /> Guardar cloud</button>
         <button onClick={() => setShowRefs(!showRefs)}><SlidersHorizontal size={18} /> Referências</button>
-        <button onClick={() => window.open(`${import.meta.env.BASE_URL}templates/template_base_dados_analises_diario.xlsx`, '_blank')}><FileSpreadsheet size={18} /> Template Excel</button>
         <button onClick={() => goTo('impact')}><Activity size={18} /> Análise de impacto</button>
+      </div>
+
+      <div className="cloud-note">
+        <strong>Cloud Google Sheets · {cloudStatus}</strong>
+        <p>{cloudMessage}</p>
       </div>
 
       {showRefs && <ReferenceEditor refs={refs} setRefs={setRefs} />}
