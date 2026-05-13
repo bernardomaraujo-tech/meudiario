@@ -23,6 +23,7 @@ import {
   X
 } from 'lucide-react'
 import { biomarkers, defaultBehaviours, defaultReferences } from './data/biomarkers.js'
+import { getAllCloudData, isCloudConfigured, saveAllCloudData } from './services/cloudStore.js'
 
 const STORAGE = {
   exams: 'ads_exams_v2',
@@ -209,6 +210,8 @@ function App() {
   const [selectedExamId, setSelectedExamId] = useState(null)
   const [impactBiomarkerId, setImpactBiomarkerId] = useState(null)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Ligado' : 'Não configurado')
+  const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'A cloud está pronta a sincronizar.' : 'Configura o Apps Script para ativar a sincronização.')
   const importInput = useRef(null)
 
   useEffect(() => saveJson(STORAGE.exams, exams), [exams])
@@ -234,11 +237,64 @@ function App() {
     if (!file) return
     const text = await file.text()
     const data = JSON.parse(text)
+    const nextExams = Array.isArray(data.exams) ? data.exams : exams
+    const nextDiary = Array.isArray(data.diary) ? data.diary : diary
+    const nextBehaviours = Array.isArray(data.behaviours) ? data.behaviours : behaviours
+    const nextRefs = data.refs || refs
     if (Array.isArray(data.exams)) setExams(data.exams)
     if (Array.isArray(data.diary)) setDiary(data.diary)
     if (Array.isArray(data.behaviours)) setBehaviours(data.behaviours)
     if (data.refs) setRefs(data.refs)
+    await syncCloudSnapshot({ exams: nextExams, diary: nextDiary, behaviours: nextBehaviours, refs: nextRefs })
   }
+
+  async function loadCloudData() {
+    if (!isCloudConfigured()) {
+      setCloudStatus('Não configurado')
+      setCloudMessage('Preenche CLOUD_API_URL e CLOUD_TOKEN em src/cloudConfig.js.')
+      return
+    }
+    try {
+      setCloudStatus('A carregar')
+      setCloudMessage('A carregar dados do Google Sheets...')
+      const data = await getAllCloudData()
+      if (!data) throw new Error('Sem dados devolvidos pela cloud.')
+      if (Array.isArray(data.exams)) setExams(data.exams)
+      if (Array.isArray(data.diary)) setDiary(data.diary)
+      if (Array.isArray(data.behaviours)) setBehaviours(data.behaviours)
+      if (data.refs) setRefs(data.refs)
+      setCloudStatus('Sincronizado')
+      setCloudMessage(`Dados carregados da cloud. Última leitura: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
+    } catch (error) {
+      setCloudStatus('Erro')
+      setCloudMessage(error.message || 'Erro ao carregar dados da cloud.')
+    }
+  }
+
+  async function syncCloudSnapshot(overrides = {}) {
+    if (!isCloudConfigured()) return
+    const payload = {
+      exams: overrides.exams ?? exams,
+      diary: overrides.diary ?? diary,
+      behaviours: overrides.behaviours ?? behaviours,
+      refs: overrides.refs ?? refs
+    }
+    try {
+      setCloudStatus('A guardar')
+      setCloudMessage('A guardar dados no Google Sheets...')
+      await saveAllCloudData(payload)
+      setCloudStatus('Sincronizado')
+      setCloudMessage(`Dados guardados na cloud. Última gravação: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
+    } catch (error) {
+      setCloudStatus('Erro')
+      setCloudMessage(error.message || 'Erro ao guardar dados na cloud.')
+    }
+  }
+
+  useEffect(() => {
+    if (isCloudConfigured()) loadCloudData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function goTo(nextTab) {
     setSelectedBiomarkerId(null)
@@ -266,13 +322,13 @@ function App() {
       </header>
 
       <main className="content">
-        {tab === 'insert' && <InsertExamView refs={refs} setRefs={setRefs} exams={exams} setExams={setExams} />}
+        {tab === 'insert' && <InsertExamView refs={refs} setRefs={setRefs} exams={exams} setExams={setExams} syncCloudSnapshot={syncCloudSnapshot} />}
         {tab === 'history' && <HistoryView exams={exams} refs={refs} onOpenExam={(examId) => { setSelectedExamId(examId); setSelectedBiomarkerId(null); setTab('analysis') }} onNewExam={() => { setSelectedExamId(null); setTab('insert') }} />}
         {tab === 'analysis' && selectedBiomarkerId && <BiomarkerDetail id={selectedBiomarkerId} exams={exams} refs={refs} onBack={() => setSelectedBiomarkerId(null)} />}
         {tab === 'analysis' && !selectedBiomarkerId && <AnalysisView exam={selectedExam} refs={refs} onSelect={setSelectedBiomarkerId} />}
-        {tab === 'diary' && <DiaryView diary={diary} setDiary={setDiary} behaviours={behaviours} setBehaviours={setBehaviours} />}
+        {tab === 'diary' && <DiaryView diary={diary} setDiary={setDiary} behaviours={behaviours} setBehaviours={setBehaviours} syncCloudSnapshot={syncCloudSnapshot} />}
         {tab === 'impact' && <ImpactView exams={exams} diary={diary} behaviours={behaviours} refs={refs} latestExam={latestExam} initialSelected={impactBiomarkerId} />}
-        {tab === 'more' && <MoreView latestExam={latestExam} refs={refs} setRefs={setRefs} exportData={exportData} importData={importData} importInput={importInput} goTo={goTo} onSelectBiomarker={(id) => { setSelectedBiomarkerId(id); setTab('analysis') }} onAnalyseImpact={analyseImpactFor} />}
+        {tab === 'more' && <MoreView latestExam={latestExam} refs={refs} setRefs={setRefs} exportData={exportData} importData={importData} importInput={importInput} goTo={goTo} onSelectBiomarker={(id) => { setSelectedBiomarkerId(id); setTab('analysis') }} onAnalyseImpact={analyseImpactFor} cloudStatus={cloudStatus} cloudMessage={cloudMessage} loadCloudData={loadCloudData} syncCloudSnapshot={syncCloudSnapshot} />}
       </main>
 
       <input ref={importInput} type="file" accept="application/json" hidden onChange={(e) => importData(e.target.files?.[0])} />
@@ -297,7 +353,7 @@ function App() {
   )
 }
 
-function InsertExamView({ refs, setRefs, exams, setExams }) {
+function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
   const [examName, setExamName] = useState('')
   const [date, setDate] = useState(todayISO())
   const [time, setTime] = useState(timeNow())
@@ -329,7 +385,9 @@ function InsertExamView({ refs, setRefs, exams, setExams }) {
       values: normalizedValues,
       createdAt: new Date().toISOString()
     }
-    setExams([record, ...exams])
+    const nextExams = [record, ...exams]
+    setExams(nextExams)
+    syncCloudSnapshot?.({ exams: nextExams })
     setExamName('')
     setValues({})
     alert('Análise guardada.')
@@ -793,7 +851,7 @@ function TrendChart({ series, refConfig, unit }) {
   )
 }
 
-function DiaryView({ diary, setDiary, behaviours, setBehaviours }) {
+function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapshot }) {
   const [date, setDate] = useState(yesterdayISO())
   const [values, setValues] = useState({})
   const [note, setNote] = useState('')
@@ -822,7 +880,9 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours }) {
     const otherDays = diary.filter((d) => d.date !== date)
     const dayRows = behaviours.map((b) => ({ date, behaviourId: b.id, label: b.label, value: values[b.id] ?? null }))
     const noteRow = { date, behaviourId: '__note__', label: 'Nota diária', value: null, note }
-    setDiary([...otherDays, ...dayRows, noteRow])
+    const nextDiary = [...otherDays, ...dayRows, noteRow]
+    setDiary(nextDiary)
+    syncCloudSnapshot?.({ diary: nextDiary })
     alert('Diário guardado.')
   }
 
@@ -991,7 +1051,7 @@ function ImpactRow({ row }) {
   )
 }
 
-function MoreView({ latestExam, refs, setRefs, exportData, importData, importInput, goTo, onSelectBiomarker, onAnalyseImpact }) {
+function MoreView({ latestExam, refs, setRefs, exportData, importData, importInput, goTo, onSelectBiomarker, onAnalyseImpact, cloudStatus, cloudMessage, loadCloudData, syncCloudSnapshot }) {
   const [showRefs, setShowRefs] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -1014,6 +1074,18 @@ function MoreView({ latestExam, refs, setRefs, exportData, importData, importInp
           <p className="eyebrow">Acompanhamento</p>
           <h2>Estado dos biomarcadores</h2>
           <p>Esta área mostra os biomarcadores da última análise em dois estados: fora do intervalo ou ideal.</p>
+        </div>
+      </div>
+
+      <div className="cloud-card">
+        <div>
+          <span>Cloud Google Sheets</span>
+          <strong>{cloudStatus}</strong>
+          <p>{cloudMessage}</p>
+        </div>
+        <div className="cloud-actions">
+          <button onClick={loadCloudData}>Carregar cloud</button>
+          <button onClick={() => syncCloudSnapshot?.()}>Guardar cloud</button>
         </div>
       </div>
 
