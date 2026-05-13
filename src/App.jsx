@@ -31,7 +31,7 @@ const STORAGE = {
   refs: 'ads_refs_v2'
 }
 
-const STATUS_ORDER = ['out', 'sufficient', 'ideal', 'unknown']
+const STATUS_ORDER = ['out', 'ideal', 'unknown']
 
 const CATEGORY_ORDER = [
   'Hemograma',
@@ -109,17 +109,24 @@ function getStatus(value, ref) {
   const n = parseNum(value)
   if (n === null) return 'empty'
   if (!hasRange(ref)) return 'unknown'
+
   const hasIdeal = parseNum(ref?.idealMin) !== null || parseNum(ref?.idealMax) !== null
-  const hasSufficient = parseNum(ref?.sufficientMin) !== null || parseNum(ref?.sufficientMax) !== null
-  if (hasIdeal && inRange(n, ref.idealMin, ref.idealMax)) return 'ideal'
-  if (hasSufficient && inRange(n, ref.sufficientMin, ref.sufficientMax)) return 'sufficient'
-  return 'out'
+  const hasReference = parseNum(ref?.sufficientMin) !== null || parseNum(ref?.sufficientMax) !== null
+
+  // Apresentação simplificada:
+  // - Fora do intervalo: abaixo/acima da referência configurada
+  // - Ideal: dentro da referência configurada
+  // Se existir um alvo ideal específico, esse alvo prevalece.
+  if (hasIdeal) return inRange(n, ref.idealMin, ref.idealMax) ? 'ideal' : 'out'
+  if (hasReference) return inRange(n, ref.sufficientMin, ref.sufficientMax) ? 'ideal' : 'out'
+
+  return 'unknown'
 }
 
 function statusLabel(status) {
   return {
     ideal: 'Ideal',
-    sufficient: 'Suficiente',
+    sufficient: 'Ideal',
     out: 'Fora do intervalo',
     unknown: 'Sem referência',
     empty: 'Sem valor'
@@ -128,7 +135,7 @@ function statusLabel(status) {
 
 function statusIcon(status) {
   if (status === 'ideal') return '✓'
-  if (status === 'sufficient') return '•'
+  if (status === 'sufficient') return '✓'
   if (status === 'out') return '!'
   return '—'
 }
@@ -381,10 +388,10 @@ function ReferenceEditor({ refs, setRefs }) {
           <div className="reference-row" key={b.id}>
             <strong>{b.name}</strong>
             <div className="ref-inputs">
-              <label>Suf. mín<input inputMode="decimal" value={ref.sufficientMin ?? ''} onChange={(e) => patchRef(b.id, 'sufficientMin', e.target.value)} /></label>
-              <label>Suf. máx<input inputMode="decimal" value={ref.sufficientMax ?? ''} onChange={(e) => patchRef(b.id, 'sufficientMax', e.target.value)} /></label>
-              <label>Ideal mín<input inputMode="decimal" value={ref.idealMin ?? ''} onChange={(e) => patchRef(b.id, 'idealMin', e.target.value)} /></label>
-              <label>Ideal máx<input inputMode="decimal" value={ref.idealMax ?? ''} onChange={(e) => patchRef(b.id, 'idealMax', e.target.value)} /></label>
+              <label>Ref. mín<input inputMode="decimal" value={ref.sufficientMin ?? ''} onChange={(e) => patchRef(b.id, 'sufficientMin', e.target.value)} /></label>
+              <label>Ref. máx<input inputMode="decimal" value={ref.sufficientMax ?? ''} onChange={(e) => patchRef(b.id, 'sufficientMax', e.target.value)} /></label>
+              <label>Alvo mín<input inputMode="decimal" value={ref.idealMin ?? ''} onChange={(e) => patchRef(b.id, 'idealMin', e.target.value)} /></label>
+              <label>Alvo máx<input inputMode="decimal" value={ref.idealMax ?? ''} onChange={(e) => patchRef(b.id, 'idealMax', e.target.value)} /></label>
             </div>
           </div>
         )
@@ -405,13 +412,13 @@ function AnalysisView({ latestExam, refs, onSelect }) {
 
   const grouped = {
     out: cards.filter((c) => c.status === 'out'),
-    sufficient: cards.filter((c) => c.status === 'sufficient'),
     ideal: cards.filter((c) => c.status === 'ideal'),
     unknown: cards.filter((c) => c.status === 'unknown')
   }
 
   const filteredCards = cards.filter((c) => `${c.biomarker.name} ${c.biomarker.category}`.toLowerCase().includes(query.toLowerCase()))
-  const orderedCards = STATUS_ORDER.flatMap((status) => filteredCards.filter((c) => c.status === status))
+  const visibleStatuses = ['out', 'ideal']
+  const orderedCards = visibleStatuses.flatMap((status) => filteredCards.filter((c) => c.status === status))
 
   if (!latestExam) {
     return <EmptyState title="Ainda não existem análises" text="Começa por inserir uma análise. Depois a app mostra aqui o resumo por biomarcador." />
@@ -419,9 +426,8 @@ function AnalysisView({ latestExam, refs, onSelect }) {
 
   return (
     <section className="screen">
-      <div className="status-grid">
+      <div className="status-grid two-cols">
         <StatusCard label="Fora do intervalo" count={grouped.out.length} status="out" />
-        <StatusCard label="Suficiente" count={grouped.sufficient.length} status="sufficient" />
         <StatusCard label="Ideal" count={grouped.ideal.length} status="ideal" />
       </div>
 
@@ -440,7 +446,7 @@ function AnalysisView({ latestExam, refs, onSelect }) {
         ))}
       </div>
 
-      {!orderedCards.length && <EmptyState title="Sem resultados" text="Não existem biomarcadores com esse filtro na última análise." compact />}
+      {!orderedCards.length && <EmptyState title="Sem resultados" text="Não existem biomarcadores fora do intervalo ou ideais com esse filtro." compact />}
     </section>
   )
 }
@@ -568,7 +574,7 @@ function referenceBand(refConfig) {
 
   if (sufficientComplete) {
     return {
-      label: 'Suficiente',
+      label: 'Ideal',
       lo: sufficientLo,
       hi: sufficientHi,
       display: `${formatReferenceValue(sufficientLo)}–${formatReferenceValue(sufficientHi)}`,
@@ -760,7 +766,7 @@ function shiftDate(dateText, delta) {
 }
 
 function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelected }) {
-  const targetCards = useMemo(() => latestBiomarkerCards(latestExam, refs, ['out', 'sufficient']), [latestExam, refs])
+  const targetCards = useMemo(() => latestBiomarkerCards(latestExam, refs, ['out']), [latestExam, refs])
   const targetBiomarkers = targetCards.map((card) => card.biomarker)
   const fallbackSelected = initialSelected || targetBiomarkers[0]?.id || biomarkers[0]?.id
   const [selected, setSelected] = useState(fallbackSelected)
@@ -792,7 +798,7 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
   if (!targetBiomarkers.length) {
     return (
       <section className="screen">
-        <EmptyState title="Sem biomarcadores a acompanhar" text="Na última análise não existem biomarcadores fora do intervalo ou em estado suficiente. A análise de impacto fica disponível quando existir algum ponto a acompanhar." />
+        <EmptyState title="Sem biomarcadores a acompanhar" text="Na última análise não existem biomarcadores fora do intervalo. A análise de impacto fica disponível quando existir algum ponto prioritário a acompanhar." />
         <div className="tool-grid single">
           <button onClick={() => window.open(`${import.meta.env.BASE_URL}templates/template_base_dados_analises_diario.xlsx`, '_blank')}><FileSpreadsheet size={18} /> Template Excel</button>
         </div>
@@ -806,8 +812,8 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
         <div className="intro-icon"><Activity size={22} /></div>
         <div>
           <p className="eyebrow">Análise orientada</p>
-          <h2>Impacto nos biomarcadores a acompanhar</h2>
-          <p>A app analisa apenas biomarcadores fora do intervalo ou suficientes na última análise.</p>
+          <h2>Impacto nos biomarcadores fora do intervalo</h2>
+          <p>A app analisa prioritariamente os biomarcadores fora do intervalo na última análise.</p>
         </div>
       </div>
 
@@ -887,13 +893,13 @@ function MoreView({ latestExam, refs, setRefs, exportData, importData, importInp
 
   const followUpCards = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return latestBiomarkerCards(latestExam, refs, ['out', 'sufficient'])
+    return latestBiomarkerCards(latestExam, refs, ['out', 'ideal'])
       .filter((card) => !q || `${card.biomarker.name} ${card.biomarker.category} ${card.biomarker.description}`.toLowerCase().includes(q))
   }, [latestExam, refs, query])
 
   const counts = {
     out: followUpCards.filter((card) => card.status === 'out').length,
-    sufficient: followUpCards.filter((card) => card.status === 'sufficient').length
+    ideal: followUpCards.filter((card) => card.status === 'ideal').length
   }
 
   return (
@@ -902,22 +908,22 @@ function MoreView({ latestExam, refs, setRefs, exportData, importData, importInp
         <div className="intro-icon"><LineChart size={22} /></div>
         <div>
           <p className="eyebrow">Acompanhamento</p>
-          <h2>Biomarcadores a melhorar</h2>
-          <p>Esta área mostra apenas os biomarcadores da última análise que estão fora do intervalo ou como suficiente.</p>
+          <h2>Estado dos biomarcadores</h2>
+          <p>Esta área mostra os biomarcadores da última análise em dois estados: fora do intervalo ou ideal.</p>
         </div>
       </div>
 
       <div className="status-grid two-cols">
         <StatusCard label="Fora do intervalo" count={counts.out} status="out" />
-        <StatusCard label="Suficiente" count={counts.sufficient} status="sufficient" />
+        <StatusCard label="Ideal" count={counts.ideal} status="ideal" />
       </div>
 
-      <div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores a acompanhar" /></div>
+      <div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" /></div>
 
       {!latestExam && <EmptyState title="Ainda não existem análises" text="Insere uma análise para aparecerem aqui os biomarcadores que merecem acompanhamento." compact />}
 
       {latestExam && !followUpCards.length && (
-        <EmptyState title="Sem biomarcadores a acompanhar" text="Com os dados atuais, não existem biomarcadores fora do intervalo ou suficientes na última análise." compact />
+        <EmptyState title="Sem biomarcadores classificados" text="Com os dados atuais, não existem biomarcadores classificados como fora do intervalo ou ideal na última análise." compact />
       )}
 
       <div className="followup-list">
@@ -942,7 +948,7 @@ function MoreView({ latestExam, refs, setRefs, exportData, importData, importInp
 
       <div className="info-card warning-soft">
         <Sparkle />
-        <p>O objetivo é cruzar estes biomarcadores com o diário de comportamentos e gerar pistas de melhoria. As sugestões são apoio ao acompanhamento, não decisão clínica.</p>
+        <p>O objetivo é cruzar os biomarcadores fora do intervalo com o diário de comportamentos e gerar pistas de melhoria. As sugestões são apoio ao acompanhamento, não decisão clínica.</p>
       </div>
 
       <div className="section-header"><h3>Ferramentas</h3></div>
