@@ -197,12 +197,24 @@ function titleForTab(tab, selectedBiomarkerId) {
   }[tab] || 'Meu Diário'
 }
 
+
+function withDefaultReferences(value) {
+  return { ...defaultReferences, ...(value && typeof value === 'object' ? value : {}) }
+}
+
+function withDefaultBehaviours(value) {
+  if (!Array.isArray(value) || value.length === 0) return defaultBehaviours
+  const existingIds = new Set(value.map((item) => item.id))
+  const missingDefaults = defaultBehaviours.filter((item) => !existingIds.has(item.id))
+  return [...value, ...missingDefaults]
+}
+
 function App() {
   const [tab, setTab] = useState('analysis')
   const [exams, setExams] = useState(() => loadJson(STORAGE.exams, []))
   const [diary, setDiary] = useState(() => loadJson(STORAGE.diary, []))
-  const [behaviours, setBehaviours] = useState(() => loadJson(STORAGE.behaviours, defaultBehaviours))
-  const [refs, setRefs] = useState(() => loadJson(STORAGE.refs, defaultReferences))
+  const [behaviours, setBehaviours] = useState(() => withDefaultBehaviours(loadJson(STORAGE.behaviours, defaultBehaviours)))
+  const [refs, setRefs] = useState(() => withDefaultReferences(loadJson(STORAGE.refs, defaultReferences)))
   const [selectedBiomarkerId, setSelectedBiomarkerId] = useState(null)
   const [selectedExamId, setSelectedExamId] = useState(null)
   const [impactBiomarkerId, setImpactBiomarkerId] = useState(null)
@@ -244,8 +256,8 @@ function App() {
 
       if (Array.isArray(data.exams)) setExams(data.exams)
       if (Array.isArray(data.diary)) setDiary(data.diary)
-      if (Array.isArray(data.behaviours) && data.behaviours.length > 0) setBehaviours(data.behaviours)
-      if (data.refs && Object.keys(data.refs).length > 0) setRefs({ ...defaultReferences, ...data.refs })
+      if (Array.isArray(data.behaviours) && data.behaviours.length > 0) setBehaviours(withDefaultBehaviours(data.behaviours))
+      if (data.refs && Object.keys(data.refs).length > 0) setRefs(withDefaultReferences(data.refs))
       setCloudStatus('Sincronizado')
       setCloudMessage(`Dados carregados da cloud. Última leitura: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
     } catch (error) {
@@ -259,8 +271,8 @@ function App() {
     const payload = {
       exams: overrides.exams ?? exams,
       diary: overrides.diary ?? diary,
-      behaviours: overrides.behaviours ?? behaviours,
-      refs: overrides.refs ?? refs
+      behaviours: withDefaultBehaviours(overrides.behaviours ?? behaviours),
+      refs: withDefaultReferences(overrides.refs ?? refs)
     }
     try {
       setCloudStatus('A guardar')
@@ -345,7 +357,7 @@ function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return biomarkers
-    return biomarkers.filter((b) => `${b.name} ${b.category}`.toLowerCase().includes(q))
+    return biomarkers.filter((b) => `${b.name} ${b.category} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(q))
   }, [query])
 
   function saveExam() {
@@ -426,7 +438,7 @@ function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
 
 function ReferenceEditor({ refs, setRefs }) {
   const [query, setQuery] = useState('')
-  const filtered = biomarkers.filter((b) => `${b.name} ${b.category}`.toLowerCase().includes(query.toLowerCase()))
+  const filtered = biomarkers.filter((b) => `${b.name} ${b.category} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(query.toLowerCase()))
   function patchRef(id, field, value) {
     setRefs({ ...refs, [id]: { ...(refs[id] || {}), [field]: value } })
   }
@@ -584,7 +596,7 @@ function StatusCard({ label, count, status }) {
 }
 
 function MiniBar({ status }) {
-  return <div className={`mini-bar ${status}`}><span /><span /><i /></div>
+  return <div className={`mini-bar ${status}`}><span /><span /><span /><i /></div>
 }
 
 function latestBiomarkerCards(latestExam, refs, allowedStatuses = null) {
