@@ -259,10 +259,23 @@ function App() {
       setCloudMessage('A carregar dados do Google Sheets...')
       const data = await getAllCloudData()
       if (!data) throw new Error('Sem dados devolvidos pela cloud.')
+
+      const cloudHasData =
+        (Array.isArray(data.exams) && data.exams.length > 0) ||
+        (Array.isArray(data.diary) && data.diary.length > 0) ||
+        (Array.isArray(data.behaviours) && data.behaviours.length > 0) ||
+        (data.refs && Object.keys(data.refs).length > 0)
+
+      if (!cloudHasData) {
+        setCloudStatus('Cloud vazia')
+        setCloudMessage('A cloud está ligada, mas ainda não tem dados. Usa Guardar cloud no dispositivo onde tens os dados atuais para inicializar o Google Sheets.')
+        return
+      }
+
       if (Array.isArray(data.exams)) setExams(data.exams)
       if (Array.isArray(data.diary)) setDiary(data.diary)
-      if (Array.isArray(data.behaviours)) setBehaviours(data.behaviours)
-      if (data.refs) setRefs(data.refs)
+      if (Array.isArray(data.behaviours) && data.behaviours.length > 0) setBehaviours(data.behaviours)
+      if (data.refs && Object.keys(data.refs).length > 0) setRefs({ ...defaultReferences, ...data.refs })
       setCloudStatus('Sincronizado')
       setCloudMessage(`Dados carregados da cloud. Última leitura: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
     } catch (error) {
