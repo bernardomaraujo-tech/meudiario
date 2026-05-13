@@ -53,3 +53,57 @@ export const biomarkers = [
 
   { id: 'paratormona_pth', name: 'Paratormona PTH', aliases: ['Paratomona PTH', 'Paratormona', 'Parathormona', 'PTH'], unit: 'pg/mL', category: 'Osso e Mineral', direction: 'range', description: 'Hormona envolvida no equilíbrio do cálcio e fósforo. Muito relevante em doentes em hemodiálise.' }
 ]
+
+export const defaultReferences = biomarkers.reduce((acc, biomarker) => {
+  acc[biomarker.id] = {
+    sufficientMin: '',
+    sufficientMax: '',
+    idealMin: '',
+    idealMax: '',
+    direction: biomarker.direction || 'range'
+  }
+
+  return acc
+}, {})
+
+export const defaultBehaviours = [
+  { id: 'peixe', label: 'Peixe', category: 'Proteína' },
+  { id: 'carne_branca', label: 'Carne branca', category: 'Proteína' },
+  { id: 'carne_vermelha', label: 'Carne vermelha', category: 'Proteína' },
+  { id: 'enchidos_fumados', label: 'Enchidos ou fumados', category: 'Proteína' },
+  { id: 'marisco', label: 'Marisco', category: 'Proteína' },
+
+  { id: 'batata', label: 'Batata', category: 'Hidratos' },
+  { id: 'arroz_massa', label: 'Arroz ou massa', category: 'Hidratos' },
+  { id: 'pao', label: 'Pão', category: 'Hidratos' },
+  { id: 'croissant_pastelaria', label: 'Croissant ou pastelaria', category: 'Doces' },
+  { id: 'bolo_caseiro', label: 'Bolo caseiro', category: 'Doces' },
+  { id: 'bolo_fabrico', label: 'Bolo de fabrico', category: 'Doces' },
+  { id: 'bolachas', label: 'Bolachas', category: 'Doces' },
+  { id: 'chocolate', label: 'Chocolate', category: 'Doces' },
+
+  { id: 'salada', label: 'Salada', category: 'Vegetais' },
+  { id: 'legumes_cozidos', label: 'Legumes cozidos', category: 'Vegetais' },
+  { id: 'sopa', label: 'Sopa', category: 'Vegetais' },
+  { id: 'fruta', label: 'Fruta', category: 'Fruta' },
+  { id: 'banana', label: 'Banana', category: 'Fruta' },
+  { id: 'frutos_secos', label: 'Frutos secos', category: 'Snacks' },
+
+  { id: 'iogurte_proteina', label: 'Iogurte de proteína', category: 'Laticínios' },
+  { id: 'iogurte_normal', label: 'Iogurte normal', category: 'Laticínios' },
+  { id: 'queijo', label: 'Queijo', category: 'Laticínios' },
+  { id: 'leite', label: 'Leite', category: 'Laticínios' },
+
+  { id: 'refrigerante_cola', label: 'Refrigerante tipo cola', category: 'Bebidas' },
+  { id: 'alcool', label: 'Álcool', category: 'Bebidas' },
+  { id: 'liquidos_acima_limite', label: 'Líquidos acima do limite', category: 'Rotina' },
+
+  { id: 'refeicao_salgada', label: 'Refeição salgada', category: 'Sal' },
+  { id: 'comida_processada', label: 'Comida processada', category: 'Sal' },
+  { id: 'fast_food', label: 'Fast food', category: 'Sal' },
+
+  { id: 'quelante_fosforo', label: 'Quelante do fósforo à refeição', category: 'Medicação' },
+  { id: 'esquecimento_medicacao', label: 'Esquecimento de medicação', category: 'Medicação' },
+  { id: 'dialise', label: 'Sessão de diálise', category: 'Tratamento' },
+  { id: 'atividade_fisica', label: 'Atividade física', category: 'Rotina' }
+]
