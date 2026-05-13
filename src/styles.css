@@ -960,3 +960,27 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     grid-column: auto;
   }
 }
+
+.cloud-note {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+
+.cloud-note strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.cloud-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 650;
+}
