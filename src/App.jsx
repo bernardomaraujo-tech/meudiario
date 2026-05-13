@@ -599,17 +599,50 @@ function MiniBar({ status }) {
   return <div className={`mini-bar ${status}`}><span /><span /><span /><i /></div>
 }
 
-function latestBiomarkerCards(latestExam, refs, allowedStatuses = null) {
-  const latestValues = latestExam?.values || {}
-  const cards = Object.entries(latestValues).map(([id, value]) => {
-    const biomarker = biomarkers.find((b) => b.id === id)
-    if (!biomarker) return null
-    const status = getStatus(value, refs[id])
-    return { biomarker, value, status }
-  }).filter(Boolean)
+function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal']) {
 
-  const filtered = allowedStatuses ? cards.filter((c) => allowedStatuses.includes(c.status)) : cards
-  return STATUS_ORDER.flatMap((status) => filtered.filter((c) => c.status === status))
+  if (!exam || !exam.values) return []
+
+  return biomarkers
+
+    .map((biomarker) => {
+
+      const value = exam.values[biomarker.id]
+
+      if (value === undefined || value === null || value === '') {
+
+        return null
+
+      }
+
+      const refConfig = refs?.[biomarker.id] || defaultReferences[biomarker.id]
+
+      const status = classifyValue(value, refConfig)
+
+      return {
+
+        id: biomarker.id,
+
+        name: biomarker.name,
+
+        unit: biomarker.unit,
+
+        category: biomarker.category,
+
+        description: biomarker.description,
+
+        value,
+
+        status
+
+      }
+
+    })
+
+    .filter(Boolean)
+
+    .filter((card) => allowedStatuses.includes(card.status))
+
 }
 
 function buildImpactRows({ behaviours, exams, diary, biomarker, refs, windowDays }) {
