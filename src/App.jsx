@@ -29,22 +29,6 @@ const STORAGE = {
   refs: 'ads_refs_v2'
 }
 
-const STATUS_ORDER = ['out', 'ideal', 'unknown']
-
-const CATEGORY_ORDER = [
-  'Hemograma',
-  'Ferro e Anemia',
-  'Inflamação',
-  'Rim e Diálise',
-  'Nutrição',
-  'Fígado',
-  'Eletrólitos e Minerais',
-  'Osso e PTH',
-  'Lípidos',
-  'Glicose',
-  'Próstata'
-]
-
 function todayISO() {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
@@ -83,12 +67,19 @@ function parseNum(value) {
 
 function formatDate(dateText) {
   if (!dateText) return ''
-  return new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${dateText}T12:00:00`))
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(new Date(`${dateText}T12:00:00`))
 }
 
 function formatDateShort(dateText) {
   if (!dateText) return ''
-  return new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit' }).format(new Date(`${dateText}T12:00:00`))
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit'
+  }).format(new Date(`${dateText}T12:00:00`))
 }
 
 function hasRange(ref) {
@@ -98,23 +89,22 @@ function hasRange(ref) {
 function inRange(value, min, max) {
   const lo = parseNum(min)
   const hi = parseNum(max)
+
   if (lo !== null && value < lo) return false
   if (hi !== null && value > hi) return false
+
   return true
 }
 
 function getStatus(value, ref) {
   const n = parseNum(value)
+
   if (n === null) return 'empty'
   if (!hasRange(ref)) return 'unknown'
 
   const hasIdeal = parseNum(ref?.idealMin) !== null || parseNum(ref?.idealMax) !== null
   const hasReference = parseNum(ref?.sufficientMin) !== null || parseNum(ref?.sufficientMax) !== null
 
-  // Apresentação simplificada:
-  // - Fora do intervalo: abaixo/acima da referência configurada
-  // - Ideal: dentro da referência configurada
-  // Se existir um alvo ideal específico, esse alvo prevalece.
   if (hasIdeal) return inRange(n, ref.idealMin, ref.idealMax) ? 'ideal' : 'out'
   if (hasReference) return inRange(n, ref.sufficientMin, ref.sufficientMax) ? 'ideal' : 'out'
 
@@ -158,26 +148,36 @@ function average(values) {
 
 function distanceToIdeal(value, ref) {
   const n = parseNum(value)
+
   if (n === null) return null
+
   const lo = parseNum(ref?.idealMin)
   const hi = parseNum(ref?.idealMax)
+
   if (lo !== null && n < lo) return lo - n
   if (hi !== null && n > hi) return n - hi
+
   return 0
 }
 
 function classifyImpact(avgYes, avgNo, biomarker, ref) {
   if (avgYes === null || avgNo === null || Math.abs(avgNo) < 0.00001) return null
+
   const direction = ref?.direction || biomarker.direction
   let score = 0
+
   if (direction === 'lower') score = ((avgNo - avgYes) / Math.abs(avgNo)) * 100
   if (direction === 'higher') score = ((avgYes - avgNo) / Math.abs(avgNo)) * 100
+
   if (direction === 'range') {
     const dy = distanceToIdeal(avgYes, ref)
     const dn = distanceToIdeal(avgNo, ref)
+
     if (dy === null || dn === null || dn < 0.00001) return null
+
     score = ((dn - dy) / Math.max(dn, 0.00001)) * 100
   }
+
   return Math.max(-99, Math.min(99, score))
 }
 
@@ -187,6 +187,7 @@ function classNameForStatus(status) {
 
 function titleForTab(tab, selectedBiomarkerId) {
   if (selectedBiomarkerId) return 'Detalhe do Biomarcador'
+
   return {
     insert: 'Nova Análise',
     analysis: 'Resumo da Última Análise',
@@ -197,16 +198,44 @@ function titleForTab(tab, selectedBiomarkerId) {
   }[tab] || 'Meu Diário'
 }
 
-
 function withDefaultReferences(value) {
-  return { ...defaultReferences, ...(value && typeof value === 'object' ? value : {}) }
+  return {
+    ...defaultReferences,
+    ...(value && typeof value === 'object' ? value : {})
+  }
 }
 
 function withDefaultBehaviours(value) {
   if (!Array.isArray(value) || value.length === 0) return defaultBehaviours
+
   const existingIds = new Set(value.map((item) => item.id))
   const missingDefaults = defaultBehaviours.filter((item) => !existingIds.has(item.id))
+
   return [...value, ...missingDefaults]
+}
+
+function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal']) {
+  if (!exam || !exam.values) return []
+
+  return biomarkers
+    .map((biomarker) => {
+      const value = exam.values[biomarker.id]
+
+      if (value === undefined || value === null || value === '') {
+        return null
+      }
+
+      const refConfig = refs?.[biomarker.id] || defaultReferences[biomarker.id]
+      const status = getStatus(value, refConfig)
+
+      return {
+        biomarker,
+        value,
+        status
+      }
+    })
+    .filter(Boolean)
+    .filter((card) => allowedStatuses.includes(card.status))
 }
 
 function App() {
@@ -228,7 +257,10 @@ function App() {
   useEffect(() => saveJson(STORAGE.refs, refs), [refs])
 
   const latestExam = useMemo(() => [...exams].sort(sortExamDate)[0] || null, [exams])
-  const selectedExam = useMemo(() => exams.find((exam) => exam.id === selectedExamId) || latestExam || null, [exams, selectedExamId, latestExam])
+
+  const selectedExam = useMemo(() => {
+    return exams.find((exam) => exam.id === selectedExamId) || latestExam || null
+  }, [exams, selectedExamId, latestExam])
 
   async function loadCloudData() {
     if (!isCloudConfigured()) {
@@ -236,10 +268,13 @@ function App() {
       setCloudMessage('Preenche CLOUD_API_URL e CLOUD_TOKEN em src/cloudConfig.js.')
       return
     }
+
     try {
       setCloudStatus('A carregar')
       setCloudMessage('A carregar dados do Google Sheets...')
+
       const data = await getAllCloudData()
+
       if (!data) throw new Error('Sem dados devolvidos pela cloud.')
 
       const cloudHasData =
@@ -258,6 +293,7 @@ function App() {
       if (Array.isArray(data.diary)) setDiary(data.diary)
       if (Array.isArray(data.behaviours) && data.behaviours.length > 0) setBehaviours(withDefaultBehaviours(data.behaviours))
       if (data.refs && Object.keys(data.refs).length > 0) setRefs(withDefaultReferences(data.refs))
+
       setCloudStatus('Sincronizado')
       setCloudMessage(`Dados carregados da cloud. Última leitura: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
     } catch (error) {
@@ -268,16 +304,20 @@ function App() {
 
   async function syncCloudSnapshot(overrides = {}) {
     if (!isCloudConfigured()) return
+
     const payload = {
       exams: overrides.exams ?? exams,
       diary: overrides.diary ?? diary,
       behaviours: withDefaultBehaviours(overrides.behaviours ?? behaviours),
       refs: withDefaultReferences(overrides.refs ?? refs)
     }
+
     try {
       setCloudStatus('A guardar')
       setCloudMessage('A guardar dados no Google Sheets...')
+
       await saveAllCloudData(payload)
+
       setCloudStatus('Sincronizado')
       setCloudMessage(`Dados guardados na cloud. Última gravação: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
     } catch (error) {
@@ -295,6 +335,7 @@ function App() {
     setSelectedBiomarkerId(null)
     setTab(nextTab)
     setQuickAddOpen(false)
+
     if (nextTab !== 'analysis') setSelectedExamId(null)
   }
 
@@ -307,31 +348,106 @@ function App() {
   return (
     <div className="app-shell">
       <div className="soft-glow" />
+
       <header className="topbar">
         <button className="nav-icon" onClick={() => selectedBiomarkerId ? setSelectedBiomarkerId(null) : (tab === 'analysis' ? goTo('analysis') : goTo('history'))} aria-label="Voltar">‹</button>
+
         <div className="top-title">
           <h1>{titleForTab(tab, selectedBiomarkerId)}</h1>
           {latestExam && tab !== 'insert' && <p>{formatDate(latestExam.date)} · {latestExam.time}</p>}
         </div>
+
         <button className="nav-icon" onClick={() => goTo('more')} aria-label="Mais"><Info size={18} /></button>
       </header>
 
       <main className="content">
         {tab === 'insert' && <InsertExamView refs={refs} setRefs={setRefs} exams={exams} setExams={setExams} syncCloudSnapshot={syncCloudSnapshot} />}
-        {tab === 'history' && <HistoryView exams={exams} refs={refs} onOpenExam={(examId) => { setSelectedExamId(examId); setSelectedBiomarkerId(null); setTab('analysis') }} onNewExam={() => { setSelectedExamId(null); setTab('insert') }} />}
-        {tab === 'analysis' && selectedBiomarkerId && <BiomarkerDetail id={selectedBiomarkerId} exams={exams} refs={refs} onBack={() => setSelectedBiomarkerId(null)} />}
-        {tab === 'analysis' && !selectedBiomarkerId && <AnalysisView exam={selectedExam} refs={refs} onSelect={setSelectedBiomarkerId} />}
-        {tab === 'diary' && <DiaryView diary={diary} setDiary={setDiary} behaviours={behaviours} setBehaviours={setBehaviours} syncCloudSnapshot={syncCloudSnapshot} />}
-        {tab === 'impact' && <ImpactView exams={exams} diary={diary} behaviours={behaviours} refs={refs} latestExam={latestExam} initialSelected={impactBiomarkerId} />}
-        {tab === 'more' && <MoreView latestExam={latestExam} refs={refs} setRefs={setRefs} goTo={goTo} onSelectBiomarker={(id) => { setSelectedBiomarkerId(id); setTab('analysis') }} onAnalyseImpact={analyseImpactFor} cloudStatus={cloudStatus} cloudMessage={cloudMessage} loadCloudData={loadCloudData} syncCloudSnapshot={syncCloudSnapshot} />}
-      </main>
 
+        {tab === 'history' && (
+          <HistoryView
+            exams={exams}
+            refs={refs}
+            onOpenExam={(examId) => {
+              setSelectedExamId(examId)
+              setSelectedBiomarkerId(null)
+              setTab('analysis')
+            }}
+            onNewExam={() => {
+              setSelectedExamId(null)
+              setTab('insert')
+            }}
+          />
+        )}
+
+        {tab === 'analysis' && selectedBiomarkerId && (
+          <BiomarkerDetail
+            id={selectedBiomarkerId}
+            exams={exams}
+            refs={refs}
+            onBack={() => setSelectedBiomarkerId(null)}
+          />
+        )}
+
+        {tab === 'analysis' && !selectedBiomarkerId && (
+          <AnalysisView
+            exam={selectedExam}
+            refs={refs}
+            onSelect={setSelectedBiomarkerId}
+          />
+        )}
+
+        {tab === 'diary' && (
+          <DiaryView
+            diary={diary}
+            setDiary={setDiary}
+            behaviours={behaviours}
+            setBehaviours={setBehaviours}
+            syncCloudSnapshot={syncCloudSnapshot}
+          />
+        )}
+
+        {tab === 'impact' && (
+          <ImpactView
+            exams={exams}
+            diary={diary}
+            behaviours={behaviours}
+            refs={refs}
+            latestExam={latestExam}
+            initialSelected={impactBiomarkerId}
+          />
+        )}
+
+        {tab === 'more' && (
+          <MoreView
+            latestExam={latestExam}
+            refs={refs}
+            setRefs={setRefs}
+            goTo={goTo}
+            onSelectBiomarker={(id) => {
+              setSelectedBiomarkerId(id)
+              setTab('analysis')
+            }}
+            onAnalyseImpact={analyseImpactFor}
+            cloudStatus={cloudStatus}
+            cloudMessage={cloudMessage}
+            loadCloudData={loadCloudData}
+            syncCloudSnapshot={syncCloudSnapshot}
+          />
+        )}
+      </main>
 
       {quickAddOpen && (
         <QuickAddSheet
           onClose={() => setQuickAddOpen(false)}
-          onNewExam={() => { setQuickAddOpen(false); setSelectedExamId(null); setTab('insert') }}
-          onNewDiary={() => { setQuickAddOpen(false); setTab('diary') }}
+          onNewExam={() => {
+            setQuickAddOpen(false)
+            setSelectedExamId(null)
+            setTab('insert')
+          }}
+          onNewDiary={() => {
+            setQuickAddOpen(false)
+            setTab('diary')
+          }}
         />
       )}
 
@@ -356,8 +472,12 @@ function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
+
     if (!q) return biomarkers
-    return biomarkers.filter((b) => `${b.name} ${b.category} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(q))
+
+    return biomarkers.filter((b) => {
+      return `${b.name} ${b.category} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(q)
+    })
   }, [query])
 
   function saveExam() {
@@ -366,10 +486,12 @@ function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
         .map(([id, value]) => [id, parseNum(value)])
         .filter(([, value]) => value !== null)
     )
+
     if (!Object.keys(normalizedValues).length) {
       alert('Insere pelo menos um valor de análise antes de guardar.')
       return
     }
+
     const record = {
       id: crypto.randomUUID(),
       name: examName || `Análise ${date}`,
@@ -378,11 +500,14 @@ function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
       values: normalizedValues,
       createdAt: new Date().toISOString()
     }
+
     const nextExams = [record, ...exams]
+
     setExams(nextExams)
     syncCloudSnapshot?.({ exams: nextExams })
     setExamName('')
     setValues({})
+
     alert('Análise guardada.')
   }
 
@@ -398,21 +523,42 @@ function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
       </div>
 
       <div className="form-grid date-grid">
-        <label>Nome do exame<input value={examName} onChange={(e) => setExamName(e.target.value)} placeholder="Ex.: Análises mensais" /></label>
-        <label><span><CalendarDays size={15} /> Data da recolha</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-        <label><span><Clock3 size={15} /> Hora da recolha</span><input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
+        <label>
+          Nome do exame
+          <input value={examName} onChange={(e) => setExamName(e.target.value)} placeholder="Ex.: Análises mensais" />
+        </label>
+
+        <label>
+          <span><CalendarDays size={15} /> Data da recolha</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+
+        <label>
+          <span><Clock3 size={15} /> Hora da recolha</span>
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+        </label>
       </div>
 
-      <div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" /></div>
+      <div className="search-box">
+        <Search size={18} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" />
+      </div>
 
-      <button className="secondary-action" onClick={() => setShowRefs(!showRefs)}><SlidersHorizontal size={18} /> {showRefs ? 'Esconder referências' : 'Configurar referências'}</button>
+      <button className="secondary-action" onClick={() => setShowRefs(!showRefs)}>
+        <SlidersHorizontal size={18} /> {showRefs ? 'Esconder referências' : 'Configurar referências'}
+      </button>
 
       {showRefs && <ReferenceEditor refs={refs} setRefs={setRefs} />}
 
-      <div className="section-header"><h3>Biomarcadores principais</h3><span>{filtered.length}</span></div>
+      <div className="section-header">
+        <h3>Biomarcadores principais</h3>
+        <span>{filtered.length}</span>
+      </div>
+
       <div className="list-block">
         {filtered.map((b) => {
           const status = getStatus(values[b.id], refs[b.id])
+
           return (
             <div className="input-card" key={b.id}>
               <div className="metric-name">
@@ -422,38 +568,60 @@ function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
                   <span>{b.unit || 'sem unidade'} · {b.category}</span>
                 </div>
               </div>
+
               <div className="value-entry">
-                <input inputMode="decimal" value={values[b.id] ?? ''} onChange={(e) => setValues({ ...values, [b.id]: e.target.value })} placeholder="Valor" />
-                {values[b.id] !== undefined && <em className={classNameForStatus(status)}>{statusIcon(status)} {statusLabel(status)}</em>}
+                <input
+                  inputMode="decimal"
+                  value={values[b.id] ?? ''}
+                  onChange={(e) => setValues({ ...values, [b.id]: e.target.value })}
+                  placeholder="Valor"
+                />
+
+                {values[b.id] !== undefined && (
+                  <em className={classNameForStatus(status)}>
+                    {statusIcon(status)} {statusLabel(status)}
+                  </em>
+                )}
               </div>
             </div>
           )
         })}
       </div>
 
-      <button className="primary-action sticky-save" onClick={saveExam}><Save size={18} /> Guardar Análise</button>
+      <button className="primary-action sticky-save" onClick={saveExam}>
+        <Save size={18} /> Guardar Análise
+      </button>
     </section>
   )
 }
 
 function ReferenceEditor({ refs, setRefs }) {
   const [query, setQuery] = useState('')
-  const filtered = biomarkers.filter((b) => `${b.name} ${b.category} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(query.toLowerCase()))
+
+  const filtered = biomarkers.filter((b) => {
+    return `${b.name} ${b.category} ${(b.aliases || []).join(' ')}`.toLowerCase().includes(query.toLowerCase())
+  })
+
   function patchRef(id, field, value) {
     setRefs({ ...refs, [id]: { ...(refs[id] || {}), [field]: value } })
   }
+
   return (
     <div className="reference-panel">
       <div className="notice">
         <strong>Referências clínicas</strong>
         <span>Deixa em branco os intervalos ainda não validados. A classificação só é aplicada quando existir referência.</span>
       </div>
+
       <input className="plain-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrar referências" />
+
       {filtered.slice(0, 12).map((b) => {
         const ref = refs[b.id] || {}
+
         return (
           <div className="reference-row" key={b.id}>
             <strong>{b.name}</strong>
+
             <div className="ref-inputs">
               <label>Ref. mín<input inputMode="decimal" value={ref.sufficientMin ?? ''} onChange={(e) => patchRef(b.id, 'sufficientMin', e.target.value)} /></label>
               <label>Ref. máx<input inputMode="decimal" value={ref.sufficientMax ?? ''} onChange={(e) => patchRef(b.id, 'sufficientMax', e.target.value)} /></label>
@@ -470,12 +638,18 @@ function ReferenceEditor({ refs, setRefs }) {
 function AnalysisView({ exam, refs, onSelect }) {
   const [query, setQuery] = useState('')
   const latestValues = exam?.values || {}
-  const cards = Object.entries(latestValues).map(([id, value]) => {
-    const biomarker = biomarkers.find((b) => b.id === id)
-    if (!biomarker) return null
-    const status = getStatus(value, refs[id])
-    return { biomarker, value, status }
-  }).filter(Boolean)
+
+  const cards = Object.entries(latestValues)
+    .map(([id, value]) => {
+      const biomarker = biomarkers.find((b) => b.id === id)
+
+      if (!biomarker) return null
+
+      const status = getStatus(value, refs[id])
+
+      return { biomarker, value, status }
+    })
+    .filter(Boolean)
 
   const grouped = {
     out: cards.filter((c) => c.status === 'out'),
@@ -483,7 +657,10 @@ function AnalysisView({ exam, refs, onSelect }) {
     unknown: cards.filter((c) => c.status === 'unknown')
   }
 
-  const filteredCards = cards.filter((c) => `${c.biomarker.name} ${c.biomarker.category}`.toLowerCase().includes(query.toLowerCase()))
+  const filteredCards = cards.filter((c) => {
+    return `${c.biomarker.name} ${c.biomarker.category}`.toLowerCase().includes(query.toLowerCase())
+  })
+
   const visibleStatuses = ['out', 'ideal']
   const orderedCards = visibleStatuses.flatMap((status) => filteredCards.filter((c) => c.status === status))
 
@@ -493,13 +670,19 @@ function AnalysisView({ exam, refs, onSelect }) {
 
   return (
     <section className="screen">
-      <div className="info-chip">{exam.name || 'Análise'} · {formatDate(exam.date)}{exam.time ? ` · ${exam.time}` : ''}</div>
+      <div className="info-chip">
+        {exam.name || 'Análise'} · {formatDate(exam.date)}{exam.time ? ` · ${exam.time}` : ''}
+      </div>
+
       <div className="status-grid two-cols">
         <StatusCard label="Fora do intervalo" count={grouped.out.length} status="out" />
         <StatusCard label="Ideal" count={grouped.ideal.length} status="ideal" />
       </div>
 
-      <div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" /></div>
+      <div className="search-box">
+        <Search size={18} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" />
+      </div>
 
       <div className="list-block compact-list">
         {orderedCards.map(({ biomarker, value, status }) => (
@@ -508,13 +691,16 @@ function AnalysisView({ exam, refs, onSelect }) {
               <strong>{biomarker.name}</strong>
               <b>{value}<small> {biomarker.unit}</small></b>
             </div>
+
             <MiniBar status={status} />
             <ChevronRight />
           </button>
         ))}
       </div>
 
-      {!orderedCards.length && <EmptyState title="Sem resultados" text="Não existem biomarcadores fora do intervalo ou ideais com esse filtro." compact />}
+      {!orderedCards.length && (
+        <EmptyState title="Sem resultados" text="Não existem biomarcadores fora do intervalo ou ideais com esse filtro." compact />
+      )}
     </section>
   )
 }
@@ -547,13 +733,16 @@ function HistoryView({ exams, refs, onOpenExam, onNewExam }) {
           const cards = latestBiomarkerCards(exam, refs, ['out', 'ideal'])
           const outCount = cards.filter((c) => c.status === 'out').length
           const idealCount = cards.filter((c) => c.status === 'ideal').length
+
           return (
             <button key={exam.id} className="history-card" onClick={() => onOpenExam(exam.id)}>
               <div className="history-card-head">
                 <strong>{exam.name || 'Análise'}</strong>
                 <ChevronRight size={18} />
               </div>
+
               <p>{formatDate(exam.date)}{exam.time ? ` · ${exam.time}` : ''}</p>
+
               <div className="history-card-meta">
                 <span>{Object.keys(exam.values || {}).length} resultados</span>
                 <em className="pill out">! Fora: {outCount}</em>
@@ -572,13 +761,24 @@ function QuickAddSheet({ onClose, onNewExam, onNewDiary }) {
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="quick-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
+
         <div className="sheet-header">
           <strong>Novo registo</strong>
           <button className="nav-icon mini" onClick={onClose} aria-label="Fechar"><X size={18} /></button>
         </div>
+
         <div className="quick-grid">
-          <button className="quick-card" onClick={onNewExam}><FlaskConical size={20} /><strong>Nova análise</strong><span>Inserir resultados manualmente</span></button>
-          <button className="quick-card" onClick={onNewDiary}><BookOpenCheck size={20} /><strong>Novo diário</strong><span>Registar comportamentos do dia</span></button>
+          <button className="quick-card" onClick={onNewExam}>
+            <FlaskConical size={20} />
+            <strong>Nova análise</strong>
+            <span>Inserir resultados manualmente</span>
+          </button>
+
+          <button className="quick-card" onClick={onNewDiary}>
+            <BookOpenCheck size={20} />
+            <strong>Novo diário</strong>
+            <span>Registar comportamentos do dia</span>
+          </button>
         </div>
       </div>
     </div>
@@ -596,75 +796,51 @@ function StatusCard({ label, count, status }) {
 }
 
 function MiniBar({ status }) {
-  return <div className={`mini-bar ${status}`}><span /><span /><span /><i /></div>
-}
-
-function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal']) {
-
-  if (!exam || !exam.values) return []
-
-  return biomarkers
-
-    .map((biomarker) => {
-
-      const value = exam.values[biomarker.id]
-
-      if (value === undefined || value === null || value === '') {
-
-        return null
-
-      }
-
-      const refConfig = refs?.[biomarker.id] || defaultReferences[biomarker.id]
-
-      const status = classifyValue(value, refConfig)
-
-      return {
-
-        id: biomarker.id,
-
-        name: biomarker.name,
-
-        unit: biomarker.unit,
-
-        category: biomarker.category,
-
-        description: biomarker.description,
-
-        value,
-
-        status
-
-      }
-
-    })
-
-    .filter(Boolean)
-
-    .filter((card) => allowedStatuses.includes(card.status))
-
+  return <div className={`mini-bar ${status}`}><span /><span /><i /></div>
 }
 
 function buildImpactRows({ behaviours, exams, diary, biomarker, refs, windowDays }) {
   if (!biomarker) return []
-  return behaviours.map((behaviour) => {
-    const yesValues = []
-    const noValues = []
-    exams.forEach((exam) => {
-      const value = parseNum(exam.values?.[biomarker.id])
-      if (value === null) return
-      const related = diary.filter((d) => d.behaviourId === behaviour.id && daysBetween(exam.date, d.date) >= 0 && daysBetween(exam.date, d.date) <= Number(windowDays))
-      if (!related.length) return
-      const hadYes = related.some((d) => d.value === true)
-      const hadOnlyNo = related.every((d) => d.value === false)
-      if (hadYes) yesValues.push(value)
-      if (hadOnlyNo) noValues.push(value)
+
+  return behaviours
+    .map((behaviour) => {
+      const yesValues = []
+      const noValues = []
+
+      exams.forEach((exam) => {
+        const value = parseNum(exam.values?.[biomarker.id])
+
+        if (value === null) return
+
+        const related = diary.filter((d) => {
+          return d.behaviourId === behaviour.id &&
+            daysBetween(exam.date, d.date) >= 0 &&
+            daysBetween(exam.date, d.date) <= Number(windowDays)
+        })
+
+        if (!related.length) return
+
+        const hadYes = related.some((d) => d.value === true)
+        const hadOnlyNo = related.every((d) => d.value === false)
+
+        if (hadYes) yesValues.push(value)
+        if (hadOnlyNo) noValues.push(value)
+      })
+
+      const avgYes = average(yesValues)
+      const avgNo = average(noValues)
+      const score = classifyImpact(avgYes, avgNo, biomarker, refs[biomarker.id])
+
+      return {
+        behaviour,
+        avgYes,
+        avgNo,
+        yesCount: yesValues.length,
+        noCount: noValues.length,
+        score
+      }
     })
-    const avgYes = average(yesValues)
-    const avgNo = average(noValues)
-    const score = classifyImpact(avgYes, avgNo, biomarker, refs[biomarker.id])
-    return { behaviour, avgYes, avgNo, yesCount: yesValues.length, noCount: noValues.length, score }
-  }).sort((a, b) => Math.abs(b.score ?? 0) - Math.abs(a.score ?? 0))
+    .sort((a, b) => Math.abs(b.score ?? 0) - Math.abs(a.score ?? 0))
 }
 
 function validImpact(row) {
@@ -673,11 +849,13 @@ function validImpact(row) {
 
 function BiomarkerDetail({ id, exams, refs, onBack }) {
   const biomarker = biomarkers.find((b) => b.id === id)
+
   const series = [...exams]
     .filter((e) => parseNum(e.values?.[id]) !== null)
     .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))
     .slice(-10)
     .map((e) => ({ date: e.date, value: parseNum(e.values[id]) }))
+
   const last = series[series.length - 1]
   const status = last ? getStatus(last.value, refs[id]) : 'empty'
 
@@ -686,11 +864,13 @@ function BiomarkerDetail({ id, exams, refs, onBack }) {
   return (
     <section className="screen detail-screen">
       <button className="back-button" onClick={onBack}>‹ Voltar</button>
+
       <div className="detail-heading">
         <div>
           <h2>{biomarker.name}</h2>
           <p>{biomarker.description}</p>
         </div>
+
         <em className={classNameForStatus(status)}>{statusLabel(status)}</em>
       </div>
 
@@ -702,7 +882,10 @@ function BiomarkerDetail({ id, exams, refs, onBack }) {
         </div>
       )}
 
-      <div className="section-header"><h3>Evolução dos últimos 10 resultados</h3></div>
+      <div className="section-header">
+        <h3>Evolução dos últimos 10 resultados</h3>
+      </div>
+
       <TrendChart series={series} refConfig={refs[id]} unit={biomarker.unit} />
 
       <div className="note-card">
@@ -715,7 +898,9 @@ function BiomarkerDetail({ id, exams, refs, onBack }) {
 
 function formatReferenceValue(value) {
   const n = parseNum(value)
+
   if (n === null) return null
+
   return Number.isInteger(n) ? String(n) : String(n).replace('.', ',')
 }
 
@@ -761,11 +946,19 @@ function referenceBand(refConfig) {
 }
 
 function TrendChart({ series, refConfig, unit }) {
-  if (series.length < 2) return <EmptyState title="Dados insuficientes" text="São necessárias pelo menos duas entradas deste biomarcador para mostrar evolução." compact />
+  if (series.length < 2) {
+    return <EmptyState title="Dados insuficientes" text="São necessárias pelo menos duas entradas deste biomarcador para mostrar evolução." compact />
+  }
 
   const band = referenceBand(refConfig)
   const values = series.map((s) => s.value)
-  const referenceValues = [refConfig?.sufficientMin, refConfig?.sufficientMax, refConfig?.idealMin, refConfig?.idealMax]
+
+  const referenceValues = [
+    refConfig?.sufficientMin,
+    refConfig?.sufficientMax,
+    refConfig?.idealMin,
+    refConfig?.idealMax
+  ]
     .map(parseNum)
     .filter((v) => v !== null)
 
@@ -824,6 +1017,7 @@ function TrendChart({ series, refConfig, unit }) {
 
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const gy = plot.y + plot.h * ratio
+
           return <line key={ratio} x1={plot.x} y1={gy} x2={plot.x + plot.w} y2={gy} className="grid-line" />
         })}
 
@@ -838,6 +1032,7 @@ function TrendChart({ series, refConfig, unit }) {
         )}
 
         <polyline points={points} fill="none" className="trend-line" />
+
         {series.map((s, i) => (
           <g key={`${s.date}-${i}`}>
             <circle cx={x(i)} cy={y(s.value)} r="6.2" className="trend-point" />
@@ -855,10 +1050,12 @@ function TrendChart({ series, refConfig, unit }) {
               <tspan x={labelX}>Acima</tspan>
               <tspan x={labelX} dy="16">&gt; {formatReferenceValue(band.hi)}</tspan>
             </text>
+
             <text x={labelX} y={(mainTop + mainBottom) / 2 - 8} className={band.label === 'Ideal' ? 'range-label ideal' : 'range-label sufficient'}>
               <tspan x={labelX}>{band.label}</tspan>
               <tspan x={labelX} dy="16">{band.display}</tspan>
             </text>
+
             <text x={labelX} y={Math.min(rowBottom - 18, mainBottom + 22)} className="range-label out">
               <tspan x={labelX}>Abaixo</tspan>
               <tspan x={labelX} dy="16">&lt; {formatReferenceValue(band.lo)}</tspan>
@@ -871,6 +1068,7 @@ function TrendChart({ series, refConfig, unit }) {
           </text>
         )}
       </svg>
+
       <small className="chart-unit">Unidade: {unit || 'sem unidade'}</small>
     </div>
   )
@@ -884,6 +1082,7 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
 
   useEffect(() => {
     const existing = diary.filter((d) => d.date === date)
+
     setValues(Object.fromEntries(existing.filter((d) => d.behaviourId !== '__note__').map((d) => [d.behaviourId, d.value])))
     setNote(existing.find((d) => d.behaviourId === '__note__')?.note || '')
   }, [date, diary])
@@ -894,9 +1093,18 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
 
   function addBehaviour() {
     const label = newBehaviour.trim()
+
     if (!label) return
-    const id = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || crypto.randomUUID()
+
+    const id = label
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '') || crypto.randomUUID()
+
     if (behaviours.some((b) => b.id === id)) return
+
     setBehaviours([...behaviours, { id, label, category: 'Personalizado' }])
     setNewBehaviour('')
   }
@@ -906,8 +1114,10 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
     const dayRows = behaviours.map((b) => ({ date, behaviourId: b.id, label: b.label, value: values[b.id] ?? null }))
     const noteRow = { date, behaviourId: '__note__', label: 'Nota diária', value: null, note }
     const nextDiary = [...otherDays, ...dayRows, noteRow]
+
     setDiary(nextDiary)
     syncCloudSnapshot?.({ diary: nextDiary })
+
     alert('Diário guardado.')
   }
 
@@ -915,15 +1125,24 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
     <section className="screen">
       <div className="date-switch">
         <button onClick={() => setDate(shiftDate(date, -1))}>‹</button>
-        <label>Data de referência<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+
+        <label>
+          Data de referência
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+
         <button onClick={() => setDate(shiftDate(date, 1))}>›</button>
       </div>
 
-      <div className="section-header"><h3>Comportamentos do dia anterior</h3></div>
+      <div className="section-header">
+        <h3>Comportamentos do dia anterior</h3>
+      </div>
+
       <div className="diary-list">
         {behaviours.map((b) => (
           <div className="diary-row" key={b.id}>
             <span>{b.label}</span>
+
             <div>
               <button className={values[b.id] === false ? 'no active' : 'no'} onClick={() => setAnswer(b.id, false)}><X size={14} />Não</button>
               <button className={values[b.id] === true ? 'yes active' : 'yes'} onClick={() => setAnswer(b.id, true)}><Check size={14} />Sim</button>
@@ -942,6 +1161,7 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
         <input value={newBehaviour} onChange={(e) => setNewBehaviour(e.target.value)} placeholder="Adicionar comportamento" />
         <button onClick={addBehaviour}><Plus size={18} /></button>
       </div>
+
       <button className="primary-action" onClick={saveDiary}><Save size={18} /> Guardar Diário</button>
     </section>
   )
@@ -949,8 +1169,10 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
 
 function shiftDate(dateText, delta) {
   const d = toDate(dateText)
+
   d.setDate(d.getDate() + delta)
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+
   return d.toISOString().slice(0, 10)
 }
 
@@ -967,7 +1189,10 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
 
   useEffect(() => {
     if (!targetBiomarkers.length) return
-    if (!targetBiomarkers.some((b) => b.id === selected)) setSelected(targetBiomarkers[0].id)
+
+    if (!targetBiomarkers.some((b) => b.id === selected)) {
+      setSelected(targetBiomarkers[0].id)
+    }
   }, [targetBiomarkers, selected])
 
   const biomarker = biomarkers.find((b) => b.id === selected) || targetBiomarkers[0] || biomarkers[0]
@@ -1004,8 +1229,17 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
       </div>
 
       <div className="form-grid compact-grid">
-        <label>Biomarcador<select value={selected} onChange={(e) => setSelected(e.target.value)}>{targetBiomarkers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
-        <label>Janela de análise<input type="number" min="1" max="90" value={windowDays} onChange={(e) => setWindowDays(e.target.value)} /></label>
+        <label>
+          Biomarcador
+          <select value={selected} onChange={(e) => setSelected(e.target.value)}>
+            {targetBiomarkers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </label>
+
+        <label>
+          Janela de análise
+          <input type="number" min="1" max="90" value={windowDays} onChange={(e) => setWindowDays(e.target.value)} />
+        </label>
       </div>
 
       {selectedCard && (
@@ -1014,11 +1248,15 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
             <span>Último resultado</span>
             <strong>{selectedCard.value}<small> {selectedCard.biomarker.unit}</small></strong>
           </div>
+
           <em className={classNameForStatus(selectedCard.status)}>{statusIcon(selectedCard.status)} {statusLabel(selectedCard.status)}</em>
         </div>
       )}
 
-      <div className="section-header"><h3>Sugestões de comportamento</h3></div>
+      <div className="section-header">
+        <h3>Sugestões de comportamento</h3>
+      </div>
+
       <div className="suggestion-grid">
         {harmful.length > 0 && (
           <div className="suggestion-card negative">
@@ -1027,6 +1265,7 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
             <span>Comportamentos associados a pior resultado neste biomarcador.</span>
           </div>
         )}
+
         {helpful.length > 0 && (
           <div className="suggestion-card positive">
             <strong>Possível foco a manter</strong>
@@ -1034,6 +1273,7 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
             <span>Comportamentos associados a melhor resultado neste biomarcador.</span>
           </div>
         )}
+
         {!harmful.length && !helpful.length && (
           <div className="suggestion-card neutral">
             <strong>Ainda sem padrão suficiente</strong>
@@ -1043,7 +1283,12 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
         )}
       </div>
 
-      <div className="impact-legend"><span>Prejudica</span><strong>Impacto</strong><span>Ajuda</span></div>
+      <div className="impact-legend">
+        <span>Prejudica</span>
+        <strong>Impacto</strong>
+        <span>Ajuda</span>
+      </div>
+
       <div className="impact-list">
         {impactRows.map((row) => <ImpactRow key={row.behaviour.id} row={row} />)}
       </div>
@@ -1061,13 +1306,16 @@ function ImpactRow({ row }) {
   const valid = validImpact(row)
   const normalized = Math.max(-1, Math.min(1, (score || 0) / 30))
   const label = !valid ? '—' : `${score > 0 ? '+' : ''}${score.toFixed(1)}%`
+
   return (
     <div className="impact-row">
       <strong>{row.behaviour.label}</strong>
+
       <div className="impact-scale">
         <i />
         <span className={valid && score >= 0 ? 'positive' : 'negative'} style={{ transform: `translateX(${normalized * 92}px)` }} />
       </div>
+
       <b className={valid && score >= 0 ? 'positive' : 'negative'}>{label}</b>
     </div>
   )
@@ -1079,8 +1327,11 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
 
   const followUpCards = useMemo(() => {
     const q = query.trim().toLowerCase()
+
     return latestBiomarkerCards(latestExam, refs, ['out', 'ideal'])
-      .filter((card) => !q || `${card.biomarker.name} ${card.biomarker.category} ${card.biomarker.description}`.toLowerCase().includes(q))
+      .filter((card) => {
+        return !q || `${card.biomarker.name} ${card.biomarker.category} ${card.biomarker.description}`.toLowerCase().includes(q)
+      })
   }, [latestExam, refs, query])
 
   const counts = {
@@ -1104,9 +1355,14 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
         <StatusCard label="Ideal" count={counts.ideal} status="ideal" />
       </div>
 
-      <div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" /></div>
+      <div className="search-box">
+        <Search size={18} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar biomarcadores" />
+      </div>
 
-      {!latestExam && <EmptyState title="Ainda não existem análises" text="Insere uma análise para aparecerem aqui os biomarcadores que merecem acompanhamento." compact />}
+      {!latestExam && (
+        <EmptyState title="Ainda não existem análises" text="Insere uma análise para aparecerem aqui os biomarcadores que merecem acompanhamento." compact />
+      )}
 
       {latestExam && !followUpCards.length && (
         <EmptyState title="Sem biomarcadores classificados" text="Com os dados atuais, não existem biomarcadores classificados como fora do intervalo ou ideal na última análise." compact />
@@ -1117,13 +1373,16 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
           <article className={`followup-card ${status}`} key={biomarker.id}>
             <div className="followup-main">
               <MetricIcon category={biomarker.category} />
+
               <div>
                 <strong>{biomarker.name}</strong>
                 <span>{biomarker.category}</span>
                 <b>{value}<small> {biomarker.unit}</small></b>
               </div>
             </div>
+
             <em className={classNameForStatus(status)}>{statusIcon(status)} {statusLabel(status)}</em>
+
             <div className="followup-actions">
               <button onClick={() => onSelectBiomarker?.(biomarker.id)}>Ver evolução</button>
               <button className="primary-mini" onClick={() => onAnalyseImpact?.(biomarker.id)}>Analisar impacto</button>
@@ -1137,7 +1396,10 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
         <p>O objetivo é cruzar os biomarcadores fora do intervalo com o diário de comportamentos e gerar pistas de melhoria. As sugestões são apoio ao acompanhamento, não decisão clínica.</p>
       </div>
 
-      <div className="section-header"><h3>Ferramentas</h3></div>
+      <div className="section-header">
+        <h3>Ferramentas</h3>
+      </div>
+
       <div className="tool-grid">
         <button onClick={loadCloudData}><Database size={18} /> Carregar cloud</button>
         <button onClick={() => syncCloudSnapshot?.()}><Save size={18} /> Guardar cloud</button>
@@ -1157,7 +1419,9 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
 
 function MetricIcon({ category }) {
   const c = category.toLowerCase()
+
   let icon = '•'
+
   if (c.includes('hemograma')) icon = 'Hb'
   if (c.includes('ferro')) icon = 'Fe'
   if (c.includes('inflama')) icon = 'CRP'
@@ -1169,6 +1433,7 @@ function MetricIcon({ category }) {
   if (c.includes('mineral') || c.includes('eletrólitos')) icon = 'Na'
   if (c.includes('osso') || c.includes('pth')) icon = 'PTH'
   if (c.includes('próstata')) icon = 'PSA'
+
   return <span className="metric-icon">{icon}</span>
 }
 
@@ -1177,7 +1442,12 @@ function Sparkle() {
 }
 
 function EmptyState({ title, text, compact = false }) {
-  return <div className={compact ? 'empty compact' : 'empty'}><strong>{title}</strong><p>{text}</p></div>
+  return (
+    <div className={compact ? 'empty compact' : 'empty'}>
+      <strong>{title}</strong>
+      <p>{text}</p>
+    </div>
+  )
 }
 
 export default App
