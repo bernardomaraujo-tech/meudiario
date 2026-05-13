@@ -584,7 +584,7 @@ function StatusCard({ label, count, status }) {
 }
 
 function MiniBar({ status }) {
-  return <div className={`mini-bar ${status}`}><span /><span /><span /><i /></div>
+  return <div className={`mini-bar ${status}`}><span /><span /><i /></div>
 }
 
 function latestBiomarkerCards(latestExam, refs, allowedStatuses = null) {
