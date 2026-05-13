@@ -190,22 +190,25 @@ function classNameForStatus(status) {
 function titleForTab(tab, selectedBiomarkerId) {
   if (selectedBiomarkerId) return 'Detalhe do Biomarcador'
   return {
-    insert: 'Inserir Análises',
+    insert: 'Nova Análise',
     analysis: 'Resumo da Última Análise',
+    history: 'Histórico de Análises',
     diary: 'Diário Alimentar',
     impact: 'Impacto dos Comportamentos',
     more: 'Acompanhamento'
-  }[tab] || 'Análises + Diário'
+  }[tab] || 'Meu Diário'
 }
 
 function App() {
-  const [tab, setTab] = useState('insert')
+  const [tab, setTab] = useState('analysis')
   const [exams, setExams] = useState(() => loadJson(STORAGE.exams, []))
   const [diary, setDiary] = useState(() => loadJson(STORAGE.diary, []))
   const [behaviours, setBehaviours] = useState(() => loadJson(STORAGE.behaviours, defaultBehaviours))
   const [refs, setRefs] = useState(() => loadJson(STORAGE.refs, defaultReferences))
   const [selectedBiomarkerId, setSelectedBiomarkerId] = useState(null)
+  const [selectedExamId, setSelectedExamId] = useState(null)
   const [impactBiomarkerId, setImpactBiomarkerId] = useState(null)
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
   const importInput = useRef(null)
 
   useEffect(() => saveJson(STORAGE.exams, exams), [exams])
@@ -214,6 +217,7 @@ function App() {
   useEffect(() => saveJson(STORAGE.refs, refs), [refs])
 
   const latestExam = useMemo(() => [...exams].sort(sortExamDate)[0] || null, [exams])
+  const selectedExam = useMemo(() => exams.find((exam) => exam.id === selectedExamId) || latestExam || null, [exams, selectedExamId, latestExam])
 
   function exportData() {
     const payload = { exams, diary, behaviours, refs, exportedAt: new Date().toISOString(), version: 3 }
@@ -239,6 +243,8 @@ function App() {
   function goTo(nextTab) {
     setSelectedBiomarkerId(null)
     setTab(nextTab)
+    setQuickAddOpen(false)
+    if (nextTab !== 'analysis') setSelectedExamId(null)
   }
 
   function analyseImpactFor(id) {
@@ -251,7 +257,7 @@ function App() {
     <div className="app-shell">
       <div className="soft-glow" />
       <header className="topbar">
-        <button className="nav-icon" onClick={() => selectedBiomarkerId ? setSelectedBiomarkerId(null) : goTo('analysis')} aria-label="Voltar">‹</button>
+        <button className="nav-icon" onClick={() => selectedBiomarkerId ? setSelectedBiomarkerId(null) : (tab === 'analysis' ? goTo('analysis') : goTo('history'))} aria-label="Voltar">‹</button>
         <div className="top-title">
           <h1>{titleForTab(tab, selectedBiomarkerId)}</h1>
           {latestExam && tab !== 'insert' && <p>{formatDate(latestExam.date)} · {latestExam.time}</p>}
@@ -261,8 +267,9 @@ function App() {
 
       <main className="content">
         {tab === 'insert' && <InsertExamView refs={refs} setRefs={setRefs} exams={exams} setExams={setExams} />}
+        {tab === 'history' && <HistoryView exams={exams} refs={refs} onOpenExam={(examId) => { setSelectedExamId(examId); setSelectedBiomarkerId(null); setTab('analysis') }} onNewExam={() => { setSelectedExamId(null); setTab('insert') }} />}
         {tab === 'analysis' && selectedBiomarkerId && <BiomarkerDetail id={selectedBiomarkerId} exams={exams} refs={refs} onBack={() => setSelectedBiomarkerId(null)} />}
-        {tab === 'analysis' && !selectedBiomarkerId && <AnalysisView latestExam={latestExam} refs={refs} onSelect={setSelectedBiomarkerId} />}
+        {tab === 'analysis' && !selectedBiomarkerId && <AnalysisView exam={selectedExam} refs={refs} onSelect={setSelectedBiomarkerId} />}
         {tab === 'diary' && <DiaryView diary={diary} setDiary={setDiary} behaviours={behaviours} setBehaviours={setBehaviours} />}
         {tab === 'impact' && <ImpactView exams={exams} diary={diary} behaviours={behaviours} refs={refs} latestExam={latestExam} initialSelected={impactBiomarkerId} />}
         {tab === 'more' && <MoreView latestExam={latestExam} refs={refs} setRefs={setRefs} exportData={exportData} importData={importData} importInput={importInput} goTo={goTo} onSelectBiomarker={(id) => { setSelectedBiomarkerId(id); setTab('analysis') }} onAnalyseImpact={analyseImpactFor} />}
@@ -270,10 +277,19 @@ function App() {
 
       <input ref={importInput} type="file" accept="application/json" hidden onChange={(e) => importData(e.target.files?.[0])} />
 
+      {quickAddOpen && (
+        <QuickAddSheet
+          onClose={() => setQuickAddOpen(false)}
+          onNewExam={() => { setQuickAddOpen(false); setSelectedExamId(null); setTab('insert') }}
+          onNewDiary={() => { setQuickAddOpen(false); setTab('diary') }}
+          onImport={() => { setQuickAddOpen(false); importInput.current?.click() }}
+        />
+      )}
+
       <nav className="bottom-nav">
-        <button className={tab === 'analysis' && !selectedBiomarkerId ? 'active' : ''} onClick={() => goTo('analysis')}><Home size={18} />Resumo</button>
-        <button className={tab === 'insert' ? 'active' : ''} onClick={() => goTo('insert')}><FlaskConical size={18} />Análises</button>
-        <button className="add-button" onClick={() => goTo('insert')} aria-label="Adicionar"><Plus size={28} /></button>
+        <button className={tab === 'analysis' && !selectedBiomarkerId ? 'active' : ''} onClick={() => { setSelectedExamId(null); goTo('analysis') }}><Home size={18} />Resumo</button>
+        <button className={tab === 'history' ? 'active' : ''} onClick={() => goTo('history')}><FlaskConical size={18} />Análises</button>
+        <button className="add-button" onClick={() => setQuickAddOpen(true)} aria-label="Adicionar"><Plus size={28} /></button>
         <button className={tab === 'diary' ? 'active' : ''} onClick={() => goTo('diary')}><BookOpenCheck size={18} />Diário</button>
         <button className={tab === 'more' || tab === 'impact' ? 'active' : ''} onClick={() => goTo('more')}><MoreHorizontal size={18} />Mais</button>
       </nav>
@@ -400,9 +416,9 @@ function ReferenceEditor({ refs, setRefs }) {
   )
 }
 
-function AnalysisView({ latestExam, refs, onSelect }) {
+function AnalysisView({ exam, refs, onSelect }) {
   const [query, setQuery] = useState('')
-  const latestValues = latestExam?.values || {}
+  const latestValues = exam?.values || {}
   const cards = Object.entries(latestValues).map(([id, value]) => {
     const biomarker = biomarkers.find((b) => b.id === id)
     if (!biomarker) return null
@@ -420,12 +436,13 @@ function AnalysisView({ latestExam, refs, onSelect }) {
   const visibleStatuses = ['out', 'ideal']
   const orderedCards = visibleStatuses.flatMap((status) => filteredCards.filter((c) => c.status === status))
 
-  if (!latestExam) {
+  if (!exam) {
     return <EmptyState title="Ainda não existem análises" text="Começa por inserir uma análise. Depois a app mostra aqui o resumo por biomarcador." />
   }
 
   return (
     <section className="screen">
+      <div className="info-chip">{exam.name || 'Análise'} · {formatDate(exam.date)}{exam.time ? ` · ${exam.time}` : ''}</div>
       <div className="status-grid two-cols">
         <StatusCard label="Fora do intervalo" count={grouped.out.length} status="out" />
         <StatusCard label="Ideal" count={grouped.ideal.length} status="ideal" />
@@ -448,6 +465,73 @@ function AnalysisView({ latestExam, refs, onSelect }) {
 
       {!orderedCards.length && <EmptyState title="Sem resultados" text="Não existem biomarcadores fora do intervalo ou ideais com esse filtro." compact />}
     </section>
+  )
+}
+
+function HistoryView({ exams, refs, onOpenExam, onNewExam }) {
+  const orderedExams = [...exams].sort(sortExamDate)
+
+  if (!orderedExams.length) {
+    return (
+      <section className="screen">
+        <EmptyState title="Ainda não existem análises" text="Usa o botão + para criar a primeira análise." />
+        <button className="primary-action" onClick={onNewExam}><Plus size={18} /> Nova Análise</button>
+      </section>
+    )
+  }
+
+  return (
+    <section className="screen">
+      <div className="intro-card clinical">
+        <div className="intro-icon"><Database size={22} /></div>
+        <div>
+          <p className="eyebrow">Consulta</p>
+          <h2>Histórico de análises</h2>
+          <p>Consulta todas as análises registadas e abre rapidamente o respetivo resumo.</p>
+        </div>
+      </div>
+
+      <div className="history-list">
+        {orderedExams.map((exam) => {
+          const cards = latestBiomarkerCards(exam, refs, ['out', 'ideal'])
+          const outCount = cards.filter((c) => c.status === 'out').length
+          const idealCount = cards.filter((c) => c.status === 'ideal').length
+          return (
+            <button key={exam.id} className="history-card" onClick={() => onOpenExam(exam.id)}>
+              <div className="history-card-head">
+                <strong>{exam.name || 'Análise'}</strong>
+                <ChevronRight size={18} />
+              </div>
+              <p>{formatDate(exam.date)}{exam.time ? ` · ${exam.time}` : ''}</p>
+              <div className="history-card-meta">
+                <span>{Object.keys(exam.values || {}).length} resultados</span>
+                <em className="pill out">! Fora: {outCount}</em>
+                <em className="pill ideal">✓ Ideal: {idealCount}</em>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function QuickAddSheet({ onClose, onNewExam, onNewDiary, onImport }) {
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="quick-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-handle" />
+        <div className="sheet-header">
+          <strong>Novo registo</strong>
+          <button className="nav-icon mini" onClick={onClose} aria-label="Fechar"><X size={18} /></button>
+        </div>
+        <div className="quick-grid">
+          <button className="quick-card" onClick={onNewExam}><FlaskConical size={20} /><strong>Nova análise</strong><span>Inserir resultados manualmente</span></button>
+          <button className="quick-card" onClick={onNewDiary}><BookOpenCheck size={20} /><strong>Novo diário</strong><span>Registar comportamentos do dia</span></button>
+          <button className="quick-card wide" onClick={onImport}><Upload size={20} /><strong>Importar backup</strong><span>Carregar dados exportados anteriormente</span></button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -607,7 +691,12 @@ function TrendChart({ series, refConfig, unit }) {
   const pad = Math.max((max - min) * 0.22, 1)
   const yMin = min - pad
   const yMax = max + pad
-  const plot = { x: 36, y: 28, w: 242, h: 142 }
+
+  const plot = { x: 42, y: 24, w: 300, h: 184 }
+  const labelX = 366
+  const baseY = 246
+  const viewBox = '0 0 460 282'
+
   const x = (idx) => plot.x + (idx * (plot.w / Math.max(series.length - 1, 1)))
   const y = (v) => plot.y + plot.h - ((v - yMin) / (yMax - yMin)) * plot.h
   const clampY = (v) => Math.max(plot.y, Math.min(plot.y + plot.h, y(v)))
@@ -620,10 +709,15 @@ function TrendChart({ series, refConfig, unit }) {
   const sufficientTop = sufficientComplete ? clampY(band.sufficientHi) : null
   const sufficientBottom = sufficientComplete ? clampY(band.sufficientLo) : null
 
+  const rowTop = plot.y
+  const rowBottom = plot.y + plot.h
+  const valueLabelY = 16
+
   return (
-    <div className="chart-card">
-      <svg viewBox="0 0 390 232" role="img" aria-label="Evolução do biomarcador">
-        <rect x={plot.x} y={plot.y} width={plot.w} height={plot.h} className="band-out-top" />
+    <div className="chart-card large-chart">
+      <svg viewBox={viewBox} role="img" aria-label="Evolução do biomarcador">
+        <rect x={plot.x} y={plot.y} width={plot.w} height={plot.h} rx="16" className="plot-surface" />
+        <rect x={plot.x} y={plot.y} width={plot.w} height={plot.h} rx="16" className="band-out-top" />
 
         {sufficientComplete && (
           <rect
@@ -645,6 +739,11 @@ function TrendChart({ series, refConfig, unit }) {
           />
         )}
 
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+          const gy = plot.y + plot.h * ratio
+          return <line key={ratio} x1={plot.x} y1={gy} x2={plot.x + plot.w} y2={gy} className="grid-line" />
+        })}
+
         <line x1={plot.x} y1={plot.y + plot.h} x2={plot.x + plot.w} y2={plot.y + plot.h} className="axis" />
         <line x1={plot.x} y1={plot.y} x2={plot.x} y2={plot.y + plot.h} className="axis" />
 
@@ -656,34 +755,39 @@ function TrendChart({ series, refConfig, unit }) {
         )}
 
         <polyline points={points} fill="none" className="trend-line" />
-        {series.map((s, i) => <g key={`${s.date}-${i}`}><circle cx={x(i)} cy={y(s.value)} r="4.8" className="trend-point" /></g>)}
+        {series.map((s, i) => (
+          <g key={`${s.date}-${i}`}>
+            <circle cx={x(i)} cy={y(s.value)} r="6.2" className="trend-point" />
+            <text x={x(i)} y={y(s.value) - 12} textAnchor="middle" className="point-value">{String(s.value).replace('.', ',')}</text>
+            <text x={x(i)} y={baseY} textAnchor="middle" className="date-label">{formatDateShort(s.date)}</text>
+          </g>
+        ))}
 
-        <text x={plot.x} y="18" className="axis-label">{yMax.toFixed(1)}</text>
-        <text x={plot.x} y="204" className="axis-label">{yMin.toFixed(1)}</text>
+        <text x={plot.x} y={valueLabelY} className="axis-label">{yMax.toFixed(1).replace('.', ',')}</text>
+        <text x={plot.x} y={baseY} className="axis-label lower">{yMin.toFixed(1).replace('.', ',')}</text>
 
         {hasMainBand ? (
           <>
-            <text x="292" y={Math.max(40, mainTop - 10)} className="range-label out">
-              <tspan x="292">Acima</tspan>
-              <tspan x="292" dy="13">&gt; {formatReferenceValue(band.hi)}</tspan>
+            <text x={labelX} y={Math.max(rowTop + 20, mainTop - 12)} className="range-label out">
+              <tspan x={labelX}>Acima</tspan>
+              <tspan x={labelX} dy="16">&gt; {formatReferenceValue(band.hi)}</tspan>
             </text>
-            <text x="292" y={(mainTop + mainBottom) / 2 - 6} className={band.label === 'Ideal' ? 'range-label ideal' : 'range-label sufficient'}>
-              <tspan x="292">{band.label}</tspan>
-              <tspan x="292" dy="13">{band.display}</tspan>
+            <text x={labelX} y={(mainTop + mainBottom) / 2 - 8} className={band.label === 'Ideal' ? 'range-label ideal' : 'range-label sufficient'}>
+              <tspan x={labelX}>{band.label}</tspan>
+              <tspan x={labelX} dy="16">{band.display}</tspan>
             </text>
-            <text x="292" y={Math.min(166, mainBottom + 18)} className="range-label out">
-              <tspan x="292">Abaixo</tspan>
-              <tspan x="292" dy="13">&lt; {formatReferenceValue(band.lo)}</tspan>
+            <text x={labelX} y={Math.min(rowBottom - 18, mainBottom + 22)} className="range-label out">
+              <tspan x={labelX}>Abaixo</tspan>
+              <tspan x={labelX} dy="16">&lt; {formatReferenceValue(band.lo)}</tspan>
             </text>
           </>
         ) : (
-          <text x="292" y="112" className="range-label sufficient">
-            <tspan x="292">Sem</tspan>
-            <tspan x="292" dy="13">referência</tspan>
+          <text x={labelX} y={plot.y + plot.h / 2 - 8} className="range-label sufficient">
+            <tspan x={labelX}>Sem</tspan>
+            <tspan x={labelX} dy="16">referência</tspan>
           </text>
         )}
       </svg>
-      <div className="chart-dates">{series.map((s, i) => <span key={`${s.date}-label-${i}`}>{formatDateShort(s.date)}</span>)}</div>
       <small className="chart-unit">Unidade: {unit || 'sem unidade'}</small>
     </div>
   )
