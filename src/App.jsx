@@ -28,7 +28,138 @@ const STORAGE = {
   behaviours: 'ads_behaviours_v3',
   refs: 'ads_refs_v2'
 }
+function corrigirReferenciasCriticas() {
+  const ss = spreadsheet_()
+  const sheet = ss.getSheetByName('Referencias')
 
+  if (!sheet) {
+    throw new Error('Folha Referencias não encontrada.')
+  }
+
+  const values = sheet.getDataRange().getValues()
+  const headers = values[0]
+
+  const col = {
+    biomarcadorId: headers.indexOf('biomarcadorId'),
+    refMin: headers.indexOf('refMin'),
+    refMax: headers.indexOf('refMax'),
+    alvoMin: headers.indexOf('alvoMin'),
+    alvoMax: headers.indexOf('alvoMax'),
+    direcao: headers.indexOf('direcao')
+  }
+
+  if (Object.values(col).some((i) => i === -1)) {
+    throw new Error('Cabeçalhos esperados não encontrados na folha Referencias.')
+  }
+
+  const correcoes = {
+    potassio: {
+      refMin: 3.5,
+      refMax: 5.5,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'range'
+    },
+    calcio_total: {
+      refMin: 8.7,
+      refMax: 10.4,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'range'
+    },
+    fosforo_inorganico: {
+      refMin: 2.4,
+      refMax: 5.5,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'lower'
+    },
+    magnesio: {
+      refMin: 1.6,
+      refMax: 2.6,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'range'
+    },
+    albumina: {
+      refMin: 3.3,
+      refMax: 5.0,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'higher'
+    },
+    creatininemia: {
+      refMin: 0.7,
+      refMax: 1.3,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'range'
+    },
+    proteinas_totais: {
+      refMin: 5.7,
+      refMax: 8.2,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'range'
+    },
+    acido_urico: {
+      refMin: 3.7,
+      refMax: 9.2,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'lower'
+    },
+    hemoglobina_glicada: {
+      refMin: 3.4,
+      refMax: 7.0,
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'lower'
+    },
+    glicemia_media_estimada: {
+      refMin: 5.7,
+      refMax: '',
+      alvoMin: '',
+      alvoMax: '',
+      direcao: 'lower'
+    }
+  }
+
+  const rowsToDelete = []
+
+  for (let r = 1; r < values.length; r++) {
+    const id = String(values[r][col.biomarcadorId] || '').trim()
+
+    if (id === 'peixe') {
+      rowsToDelete.push(r + 1)
+      continue
+    }
+
+    if (!correcoes[id]) continue
+
+    const c = correcoes[id]
+
+    sheet.getRange(r + 1, col.refMin + 1).setNumberFormat('0.00')
+    sheet.getRange(r + 1, col.refMax + 1).setNumberFormat('0.00')
+    sheet.getRange(r + 1, col.alvoMin + 1).setNumberFormat('0.00')
+    sheet.getRange(r + 1, col.alvoMax + 1).setNumberFormat('0.00')
+
+    sheet.getRange(r + 1, col.refMin + 1).setValue(c.refMin)
+    sheet.getRange(r + 1, col.refMax + 1).setValue(c.refMax)
+    sheet.getRange(r + 1, col.alvoMin + 1).setValue(c.alvoMin)
+    sheet.getRange(r + 1, col.alvoMax + 1).setValue(c.alvoMax)
+    sheet.getRange(r + 1, col.direcao + 1).setValue(c.direcao)
+  }
+
+  rowsToDelete.reverse().forEach((rowNumber) => {
+    sheet.deleteRow(rowNumber)
+  })
+
+  SpreadsheetApp.flush()
+
+  Logger.log('Referências críticas corrigidas.')
+  return 'Referências críticas corrigidas.'
+}
 function todayISO() {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
