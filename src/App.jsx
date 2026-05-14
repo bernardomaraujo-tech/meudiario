@@ -233,8 +233,36 @@ function getStatus(value, ref) {
   if (n === null) return 'empty'
   if (!hasRange(ref)) return 'unknown'
 
-  const hasIdeal = parseNum(ref?.idealMin) !== null || parseNum(ref?.idealMax) !== null
-  const hasReference = parseNum(ref?.sufficientMin) !== null || parseNum(ref?.sufficientMax) !== null
+  const direction = ref?.direction || 'range'
+
+  const refMin = parseNum(ref?.sufficientMin)
+  const refMax = parseNum(ref?.sufficientMax)
+  const idealMin = parseNum(ref?.idealMin)
+  const idealMax = parseNum(ref?.idealMax)
+
+  // Para biomarcadores onde quanto mais baixo melhor.
+  // Aceita o limite tanto em refMax como em refMin, para compatibilidade com o ficheiro atual.
+  if (direction === 'lower') {
+    const limit = idealMax ?? refMax ?? idealMin ?? refMin
+
+    if (limit === null) return 'unknown'
+
+    return n <= limit ? 'ideal' : 'out'
+  }
+
+  // Para biomarcadores onde quanto mais alto melhor.
+  // Aceita o limite tanto em refMin como em refMax, para compatibilidade com o ficheiro atual.
+  if (direction === 'higher') {
+    const limit = idealMin ?? refMin ?? idealMax ?? refMax
+
+    if (limit === null) return 'unknown'
+
+    return n >= limit ? 'ideal' : 'out'
+  }
+
+  // Para biomarcadores com intervalo normal.
+  const hasIdeal = idealMin !== null || idealMax !== null
+  const hasReference = refMin !== null || refMax !== null
 
   if (hasIdeal) return inRange(n, ref.idealMin, ref.idealMax) ? 'ideal' : 'out'
   if (hasReference) return inRange(n, ref.sufficientMin, ref.sufficientMax) ? 'ideal' : 'out'
