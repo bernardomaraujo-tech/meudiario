@@ -641,15 +641,20 @@ function AnalysisView({ exam, refs, onSelect }) {
 
   const cards = Object.entries(latestValues)
     .map(([id, value]) => {
-      const biomarker = biomarkers.find((b) => b.id === id)
+      const biomarker = biomarkers.find((b) => b.id === id) || {
+        id,
+        name: id.replaceAll('_', ' '),
+        unit: '',
+        category: 'Não mapeado',
+        direction: 'range',
+        description: 'Biomarcador presente na cloud, mas ainda não configurado no ficheiro de biomarcadores.'
+      }
 
-      if (!biomarker) return null
-
-      const status = getStatus(value, refs[id])
+      const refConfig = refs?.[id] || defaultReferences[id]
+      const status = getStatus(value, refConfig)
 
       return { biomarker, value, status }
     })
-    .filter(Boolean)
 
   const grouped = {
     out: cards.filter((c) => c.status === 'out'),
