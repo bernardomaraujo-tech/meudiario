@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   BookOpenCheck,
@@ -26,7 +26,8 @@ const STORAGE = {
   exams: 'ads_exams_v2',
   diary: 'ads_diary_v2',
   behaviours: 'ads_behaviours_v3',
-  refs: 'ads_refs_v2'
+  refs: 'ads_refs_v2',
+  dataVersion: 'ads_data_version_v1'
 }
 function corrigirReferenciasCriticas() {
   const ss = spreadsheet_()
@@ -403,6 +404,8 @@ function App() {
   const [diary, setDiary] = useState(() => loadJson(STORAGE.diary, []))
   const [behaviours, setBehaviours] = useState(() => withDefaultBehaviours(loadJson(STORAGE.behaviours, defaultBehaviours)))
   const [refs, setRefs] = useState(() => withDefaultReferences(loadJson(STORAGE.refs, defaultReferences)))
+  const [dataVersion, setDataVersion] = useState(() => localStorage.getItem(STORAGE.dataVersion) || '')
+  const isLoadingCloudRef = useRef(false)
   const [selectedBiomarkerId, setSelectedBiomarkerId] = useState(null)
   const [selectedExamId, setSelectedExamId] = useState(null)
   const [impactBiomarkerId, setImpactBiomarkerId] = useState(null)
@@ -414,6 +417,7 @@ function App() {
   useEffect(() => saveJson(STORAGE.diary, diary), [diary])
   useEffect(() => saveJson(STORAGE.behaviours, behaviours), [behaviours])
   useEffect(() => saveJson(STORAGE.refs, refs), [refs])
+  useEffect(() => localStorage.setItem(STORAGE.dataVersion, dataVersion || ''), [dataVersion])
 
   const latestExam = useMemo(() => [...exams].sort(sortExamDate)[0] || null, [exams])
 
@@ -427,6 +431,8 @@ function App() {
       setCloudMessage('Preenche CLOUD_API_URL e CLOUD_TOKEN em src/cloudConfig.js.')
       return
     }
+
+    isLoadingCloudRef.current = true
 
     try {
       setCloudStatus('A carregar')
@@ -448,23 +454,47 @@ function App() {
         return
       }
 
-      if (Array.isArray(data.exams)) setExams(data.exams)
-      if (Array.isArray(data.diary)) setDiary(data.diary)
-      if (Array.isArray(data.behaviours) && data.behaviours.length > 0) setBehaviours(withDefaultBehaviours(data.behaviours))
-      if (data.refs && Object.keys(data.refs).length > 0) setRefs(withDefaultReferences(data.refs))
+      const nextExams = Array.isArray(data.exams) ? data.exams : exams
+      const nextDiary = Array.isArray(data.diary) ? data.diary : diary
+      const nextBehaviours = Array.isArray(data.behaviours) && data.behaviours.length > 0
+        ? withDefaultBehaviours(data.behaviours)
+        : behaviours
+      const nextRefs = data.refs && Object.keys(data.refs).length > 0
+        ? withDefaultReferences(data.refs)
+        : refs
+      const nextDataVersion = data.dataVersion || ''
+
+      setExams(nextExams)
+      setDiary(nextDiary)
+      setBehaviours(nextBehaviours)
+      setRefs(nextRefs)
+      setDataVersion(nextDataVersion)
+
+      saveJson(STORAGE.exams, nextExams)
+      saveJson(STORAGE.diary, nextDiary)
+      saveJson(STORAGE.behaviours, nextBehaviours)
+      saveJson(STORAGE.refs, nextRefs)
+      localStorage.setItem(STORAGE.dataVersion, nextDataVersion)
 
       setCloudStatus('Sincronizado')
-      setCloudMessage(`Dados carregados da cloud. Última leitura: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
+      setCloudMessage(`Dados carregados da cloud. Versão: ${nextDataVersion || 'sem versão'}. Última leitura: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
     } catch (error) {
       setCloudStatus('Erro')
       setCloudMessage(error.message || 'Erro ao carregar dados da cloud.')
+    } finally {
+      isLoadingCloudRef.current = false
     }
   }
 
   async function syncCloudSnapshot(overrides = {}) {
     if (!isCloudConfigured()) return
 
+    if (isLoadingCloudRef.current) {
+      return
+    }
+
     const payload = {
+      dataVersion,
       exams: overrides.exams ?? exams,
       diary: overrides.diary ?? diary,
       behaviours: withDefaultBehaviours(overrides.behaviours ?? behaviours),
@@ -475,10 +505,15 @@ function App() {
       setCloudStatus('A guardar')
       setCloudMessage('A guardar dados no Google Sheets...')
 
-      await saveAllCloudData(payload)
+      const result = await saveAllCloudData(payload)
+
+      if (result?.dataVersion) {
+        setDataVersion(result.dataVersion)
+        localStorage.setItem(STORAGE.dataVersion, result.dataVersion)
+      }
 
       setCloudStatus('Sincronizado')
-      setCloudMessage(`Dados guardados na cloud. Última gravação: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
+      setCloudMessage(`Dados guardados na cloud. Versão: ${result?.dataVersion || dataVersion || 'sem versão'}. Última gravação: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
     } catch (error) {
       setCloudStatus('Erro')
       setCloudMessage(error.message || 'Erro ao guardar dados na cloud.')
