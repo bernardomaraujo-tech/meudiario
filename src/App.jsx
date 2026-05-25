@@ -31,7 +31,7 @@ const STORAGE = {
   localResetVersion: 'ads_local_reset_version_v1'
 }
 
-const CLOUD_DATA_VERSION = '2026-05-25-correcao-classificacao-final'
+const CLOUD_DATA_VERSION = '2026-05-25-referencias-seguras-final'
 
 const LOCAL_KEYS_TO_FORGET = [
   'ads_exams_v2',
@@ -257,11 +257,40 @@ function titleForTab(tab, selectedBiomarkerId) {
   }[tab] || 'Meu Diário'
 }
 
+function isBlankReferenceValue(value) {
+  return value === undefined || value === null || String(value).trim() === ''
+}
+
+function mergeReference(defaultRef = {}, cloudRef = {}) {
+  const merged = { ...(defaultRef || {}) }
+
+  if (!cloudRef || typeof cloudRef !== 'object') return merged
+
+  ;['sufficientMin', 'sufficientMax', 'idealMin', 'idealMax', 'direction'].forEach((field) => {
+    if (!isBlankReferenceValue(cloudRef[field])) {
+      merged[field] = cloudRef[field]
+    }
+  })
+
+  if (!merged.direction) merged.direction = defaultRef?.direction || cloudRef?.direction || 'range'
+
+  return merged
+}
+
+function getReferenceConfig(id, refs = {}) {
+  return mergeReference(defaultReferences[id], refs?.[id])
+}
+
 function withDefaultReferences(value) {
-  return {
-    ...defaultReferences,
-    ...(value && typeof value === 'object' ? value : {})
-  }
+  const cloudRefs = value && typeof value === 'object' ? value : {}
+  const ids = new Set([...Object.keys(defaultReferences), ...Object.keys(cloudRefs)])
+  const mergedRefs = {}
+
+  ids.forEach((id) => {
+    mergedRefs[id] = mergeReference(defaultReferences[id], cloudRefs[id])
+  })
+
+  return mergedRefs
 }
 
 function withDefaultBehaviours(value) {
@@ -284,7 +313,7 @@ function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal', 'su
         return null
       }
 
-      const refConfig = refs?.[biomarker.id] || defaultReferences[biomarker.id]
+      const refConfig = getReferenceConfig(biomarker.id, refs)
       const status = getStatus(value, refConfig)
 
       return {
@@ -656,7 +685,7 @@ function InsertExamView({ refs, setRefs, exams, setExams, syncCloudSnapshot }) {
 
       <div className="list-block">
         {filtered.map((b) => {
-          const status = getStatus(values[b.id], refs[b.id])
+          const status = getStatus(values[b.id], getReferenceConfig(b.id, refs))
 
           return (
             <div className="input-card" key={b.id}>
@@ -715,7 +744,7 @@ function ReferenceEditor({ refs, setRefs }) {
       <input className="plain-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrar referências" />
 
       {filtered.slice(0, 12).map((b) => {
-        const ref = refs[b.id] || {}
+        const ref = getReferenceConfig(b.id, refs)
 
         return (
           <div className="reference-row" key={b.id}>
@@ -749,7 +778,7 @@ function AnalysisView({ exam, refs, onSelect }) {
         description: 'Biomarcador presente na cloud, mas ainda não configurado no ficheiro de biomarcadores.'
       }
 
-      const refConfig = refs?.[id] || defaultReferences[id]
+      const refConfig = getReferenceConfig(id, refs)
       const status = getStatus(value, refConfig)
 
       return { biomarker, value, status }
@@ -941,7 +970,7 @@ function buildImpactRows({ behaviours, exams, diary, biomarker, refs, windowDays
 
       const avgYes = average(yesValues)
       const avgNo = average(noValues)
-      const score = classifyImpact(avgYes, avgNo, biomarker, refs[biomarker.id])
+      const score = classifyImpact(avgYes, avgNo, biomarker, getReferenceConfig(biomarker.id, refs))
 
       return {
         behaviour,
@@ -969,7 +998,8 @@ function BiomarkerDetail({ id, exams, refs, onBack }) {
     .map((e) => ({ date: e.date, value: parseNum(e.values[id]) }))
 
   const last = series[series.length - 1]
-  const status = last ? getStatus(last.value, refs[id]) : 'empty'
+  const refConfig = getReferenceConfig(id, refs)
+  const status = last ? getStatus(last.value, refConfig) : 'empty'
 
   if (!biomarker) return null
 
@@ -998,7 +1028,7 @@ function BiomarkerDetail({ id, exams, refs, onBack }) {
         <h3>Evolução dos últimos 10 resultados</h3>
       </div>
 
-      <TrendChart series={series} refConfig={refs[id]} unit={biomarker.unit} />
+      <TrendChart series={series} refConfig={refConfig} unit={biomarker.unit} />
 
       <div className="note-card">
         <strong>Notas</strong>
