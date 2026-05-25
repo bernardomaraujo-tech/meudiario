@@ -302,6 +302,95 @@ function withDefaultBehaviours(value) {
   return [...value, ...missingDefaults]
 }
 
+function listKeyExam(item) {
+  if (!item || typeof item !== 'object') return ''
+  return item.id || [item.name, item.date, item.time].filter(Boolean).join('|')
+}
+
+function listKeyDiary(item) {
+  if (!item || typeof item !== 'object') return ''
+  return [item.date || '', item.behaviourId || item.id || item.label || ''].join('|')
+}
+
+function listKeyBehaviour(item) {
+  if (!item || typeof item !== 'object') return ''
+  return item.id || item.label || ''
+}
+
+function mergeListByKey(cloudList, localList, makeKey) {
+  const merged = new Map()
+
+  ;[...(Array.isArray(cloudList) ? cloudList : []), ...(Array.isArray(localList) ? localList : [])].forEach((item) => {
+    const key = makeKey(item)
+
+    if (!key) return
+
+    merged.set(key, {
+      ...(merged.get(key) || {}),
+      ...item
+    })
+  })
+
+  return Array.from(merged.values())
+}
+
+function refHasLocalChange(id, localRef = {}) {
+  const defaultRef = defaultReferences[id] || {}
+
+  return ['sufficientMin', 'sufficientMax', 'idealMin', 'idealMax', 'direction'].some((field) => {
+    const localValue = localRef?.[field]
+
+    if (isBlankReferenceValue(localValue)) return false
+
+    const defaultValue = defaultRef?.[field]
+
+    return String(localValue) !== String(defaultValue ?? '')
+  })
+}
+
+function mergeReferencesForCloud(cloudRefsInput, localRefsInput) {
+  const cloudRefs = cloudRefsInput && typeof cloudRefsInput === 'object' && !Array.isArray(cloudRefsInput) ? cloudRefsInput : {}
+  const localRefs = localRefsInput && typeof localRefsInput === 'object' && !Array.isArray(localRefsInput) ? localRefsInput : {}
+  const cloudHasRefs = Object.keys(cloudRefs).length > 0
+
+  if (!cloudHasRefs) {
+    return withDefaultReferences(localRefs)
+  }
+
+  const mergedRefs = { ...cloudRefs }
+  const ids = new Set([...Object.keys(cloudRefs), ...Object.keys(localRefs)])
+
+  ids.forEach((id) => {
+    const localRef = localRefs[id]
+
+    if (!refHasLocalChange(id, localRef)) return
+
+    mergedRefs[id] = {
+      ...(mergedRefs[id] || {}),
+      ...localRef
+    }
+  })
+
+  return withDefaultReferences(mergedRefs)
+}
+
+function mergeCloudWithLocalData(cloudData = {}, localData = {}) {
+  const examsMerged = mergeListByKey(cloudData.exams, localData.exams, listKeyExam).sort(sortExamDate)
+  const diaryMerged = mergeListByKey(cloudData.diary, localData.diary, listKeyDiary)
+  const behavioursMerged = withDefaultBehaviours(
+    mergeListByKey(cloudData.behaviours, localData.behaviours, listKeyBehaviour)
+  )
+  const refsMerged = mergeReferencesForCloud(cloudData.refs, localData.refs)
+
+  return {
+    dataVersion: cloudData.dataVersion || localData.dataVersion || '',
+    exams: examsMerged,
+    diary: diaryMerged,
+    behaviours: behavioursMerged,
+    refs: refsMerged
+  }
+}
+
 function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal', 'sufficient', 'unknown', 'empty']) {
   if (!exam || !exam.values) return []
 
@@ -377,35 +466,32 @@ function App() {
         (data.refs && Object.keys(data.refs).length > 0)
 
       if (!cloudHasData) {
+        const nextDataVersion = data.dataVersion || ''
+
+        setDataVersion(nextDataVersion)
+        localStorage.setItem(STORAGE.dataVersion, nextDataVersion)
         setCloudStatus('Cloud vazia')
-        setCloudMessage('A cloud está ligada, mas ainda não tem dados. Usa Guardar cloud no dispositivo onde tens os dados atuais para inicializar o Google Sheets.')
+        setCloudMessage('A cloud está ligada, mas ainda não tem dados. Podes usar Guardar cloud para enviar os dados locais para o Google Sheets.')
         return
       }
 
-      const nextExams = Array.isArray(data.exams) ? data.exams : exams
-      const nextDiary = Array.isArray(data.diary) ? data.diary : diary
-      const nextBehaviours = Array.isArray(data.behaviours) && data.behaviours.length > 0
-        ? withDefaultBehaviours(data.behaviours)
-        : behaviours
-      const nextRefs = data.refs && Object.keys(data.refs).length > 0
-        ? withDefaultReferences(data.refs)
-        : refs
+      const mergedData = mergeCloudWithLocalData(data, { exams, diary, behaviours, refs })
       const nextDataVersion = data.dataVersion || ''
 
-      setExams(nextExams)
-      setDiary(nextDiary)
-      setBehaviours(nextBehaviours)
-      setRefs(nextRefs)
+      setExams(mergedData.exams)
+      setDiary(mergedData.diary)
+      setBehaviours(mergedData.behaviours)
+      setRefs(mergedData.refs)
       setDataVersion(nextDataVersion)
 
-      saveJson(STORAGE.exams, nextExams)
-      saveJson(STORAGE.diary, nextDiary)
-      saveJson(STORAGE.behaviours, nextBehaviours)
-      saveJson(STORAGE.refs, nextRefs)
+      saveJson(STORAGE.exams, mergedData.exams)
+      saveJson(STORAGE.diary, mergedData.diary)
+      saveJson(STORAGE.behaviours, mergedData.behaviours)
+      saveJson(STORAGE.refs, mergedData.refs)
       localStorage.setItem(STORAGE.dataVersion, nextDataVersion)
 
       setCloudStatus('Sincronizado')
-      setCloudMessage(`Dados carregados da cloud. Versão: ${nextDataVersion || 'sem versão'}. Última leitura: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
+      setCloudMessage(`Dados carregados da cloud sem perder registos locais ainda não sincronizados. Versão: ${nextDataVersion || 'sem versão'}. Última leitura: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
     } catch (error) {
       setCloudStatus('Erro')
       setCloudMessage(error.message || 'Erro ao carregar dados da cloud.')
@@ -421,33 +507,57 @@ function App() {
       return
     }
 
-    if (!dataVersion) {
-      setCloudStatus('A carregar')
-      setCloudMessage('Antes de guardar, a app precisa de carregar a versão atual da cloud. Clica em Carregar cloud e tenta novamente.')
-      return
-    }
-
-    const payload = {
-      dataVersion,
-      exams: overrides.exams ?? exams,
-      diary: overrides.diary ?? diary,
-      behaviours: withDefaultBehaviours(overrides.behaviours ?? behaviours),
-      refs: withDefaultReferences(overrides.refs ?? refs)
-    }
-
     try {
+      const localData = {
+        dataVersion,
+        exams: overrides.exams ?? exams,
+        diary: overrides.diary ?? diary,
+        behaviours: withDefaultBehaviours(overrides.behaviours ?? behaviours),
+        refs: withDefaultReferences(overrides.refs ?? refs)
+      }
+
+      let payload = localData
+      let versionForMessage = dataVersion
+
+      if (!dataVersion) {
+        setCloudStatus('A carregar')
+        setCloudMessage('A confirmar a versão atual da cloud antes de guardar...')
+
+        const cloudData = await getAllCloudData()
+
+        if (!cloudData) throw new Error('Não foi possível obter a versão atual da cloud antes de guardar.')
+
+        const mergedData = mergeCloudWithLocalData(cloudData, localData)
+
+        payload = mergedData
+        versionForMessage = mergedData.dataVersion || ''
+
+        setExams(mergedData.exams)
+        setDiary(mergedData.diary)
+        setBehaviours(mergedData.behaviours)
+        setRefs(mergedData.refs)
+        setDataVersion(versionForMessage)
+
+        saveJson(STORAGE.exams, mergedData.exams)
+        saveJson(STORAGE.diary, mergedData.diary)
+        saveJson(STORAGE.behaviours, mergedData.behaviours)
+        saveJson(STORAGE.refs, mergedData.refs)
+        localStorage.setItem(STORAGE.dataVersion, versionForMessage)
+      }
+
       setCloudStatus('A guardar')
       setCloudMessage('A guardar dados no Google Sheets...')
 
       const result = await saveAllCloudData(payload)
+      const nextDataVersion = result?.dataVersion || versionForMessage || dataVersion || ''
 
-      if (result?.dataVersion) {
-        setDataVersion(result.dataVersion)
-        localStorage.setItem(STORAGE.dataVersion, result.dataVersion)
+      if (nextDataVersion) {
+        setDataVersion(nextDataVersion)
+        localStorage.setItem(STORAGE.dataVersion, nextDataVersion)
       }
 
       setCloudStatus('Sincronizado')
-      setCloudMessage(`Dados guardados na cloud. Versão: ${result?.dataVersion || dataVersion || 'sem versão'}. Última gravação: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
+      setCloudMessage(`Dados guardados na cloud. Versão: ${nextDataVersion || 'sem versão'}. Última gravação: ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`)
     } catch (error) {
       setCloudStatus('Erro')
       setCloudMessage(error.message || 'Erro ao guardar dados na cloud.')
