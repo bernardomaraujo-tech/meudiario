@@ -31,14 +31,10 @@ const STORAGE = {
   localResetVersion: 'ads_local_reset_version_v1'
 }
 
-const CLOUD_DATA_VERSION = '2026-05-25-referencias-seguras-final'
+const CLOUD_DATA_VERSION = '2026-05-25-referencias-cloud-prioritaria-v2'
 
 const LOCAL_KEYS_TO_FORGET = [
-  'ads_exams_v2',
-  'ads_diary_v2',
-  'ads_behaviours_v3',
-  'ads_refs_v2',
-  'ads_data_version_v1'
+  'ads_refs_v2'
 ]
 
 function forgetOldLocalDataIfNeeded() {
@@ -261,18 +257,57 @@ function isBlankReferenceValue(value) {
   return value === undefined || value === null || String(value).trim() === ''
 }
 
+const REFERENCE_FIELD_ALIASES = {
+  sufficientMin: ['sufficientMin', 'refMin'],
+  sufficientMax: ['sufficientMax', 'refMax'],
+  idealMin: ['idealMin', 'alvoMin'],
+  idealMax: ['idealMax', 'alvoMax'],
+  direction: ['direction', 'direcao']
+}
+
+function firstReferenceValue(source = {}, field) {
+  const aliases = REFERENCE_FIELD_ALIASES[field] || [field]
+
+  for (const alias of aliases) {
+    const value = source?.[alias]
+
+    if (!isBlankReferenceValue(value)) return value
+  }
+
+  return ''
+}
+
+function normalizeDirection(value, fallback = 'range') {
+  const direction = String(value || '').trim().toLowerCase()
+
+  if (['range', 'higher', 'lower'].includes(direction)) return direction
+
+  return fallback || 'range'
+}
+
+function validReferenceNumber(value) {
+  return !isBlankReferenceValue(value) && parseNum(value) !== null
+}
+
 function mergeReference(defaultRef = {}, cloudRef = {}) {
   const merged = { ...(defaultRef || {}) }
 
   if (!cloudRef || typeof cloudRef !== 'object') return merged
 
-  ;['sufficientMin', 'sufficientMax', 'idealMin', 'idealMax', 'direction'].forEach((field) => {
-    if (!isBlankReferenceValue(cloudRef[field])) {
-      merged[field] = cloudRef[field]
+  ;['sufficientMin', 'sufficientMax', 'idealMin', 'idealMax'].forEach((field) => {
+    const value = firstReferenceValue(cloudRef, field)
+
+    // Só aceita números válidos. Isto impede que datas geradas pelo Google Sheets
+    // substituam referências corretas ou referências default da app.
+    if (validReferenceNumber(value)) {
+      merged[field] = value
     }
   })
 
-  if (!merged.direction) merged.direction = defaultRef?.direction || cloudRef?.direction || 'range'
+  merged.direction = normalizeDirection(
+    firstReferenceValue(cloudRef, 'direction'),
+    defaultRef?.direction || 'range'
+  )
 
   return merged
 }
@@ -334,44 +369,33 @@ function mergeListByKey(cloudList, localList, makeKey) {
   return Array.from(merged.values())
 }
 
-function refHasLocalChange(id, localRef = {}) {
-  const defaultRef = defaultReferences[id] || {}
+function normalizeReferenceMap(refsInput) {
+  const refs = refsInput && typeof refsInput === 'object' && !Array.isArray(refsInput) ? refsInput : {}
+  const normalized = {}
 
-  return ['sufficientMin', 'sufficientMax', 'idealMin', 'idealMax', 'direction'].some((field) => {
-    const localValue = localRef?.[field]
-
-    if (isBlankReferenceValue(localValue)) return false
-
-    const defaultValue = defaultRef?.[field]
-
-    return String(localValue) !== String(defaultValue ?? '')
+  Object.entries(refs).forEach(([id, ref]) => {
+    normalized[id] = mergeReference(defaultReferences[id], ref)
   })
+
+  return normalized
 }
 
 function mergeReferencesForCloud(cloudRefsInput, localRefsInput) {
-  const cloudRefs = cloudRefsInput && typeof cloudRefsInput === 'object' && !Array.isArray(cloudRefsInput) ? cloudRefsInput : {}
-  const localRefs = localRefsInput && typeof localRefsInput === 'object' && !Array.isArray(localRefsInput) ? localRefsInput : {}
+  const cloudRefs = normalizeReferenceMap(cloudRefsInput)
+  const localRefs = normalizeReferenceMap(localRefsInput)
   const cloudHasRefs = Object.keys(cloudRefs).length > 0
 
   if (!cloudHasRefs) {
     return withDefaultReferences(localRefs)
   }
 
-  const mergedRefs = { ...cloudRefs }
-  const ids = new Set([...Object.keys(cloudRefs), ...Object.keys(localRefs)])
-
-  ids.forEach((id) => {
-    const localRef = localRefs[id]
-
-    if (!refHasLocalChange(id, localRef)) return
-
-    mergedRefs[id] = {
-      ...(mergedRefs[id] || {}),
-      ...localRef
-    }
+  // As referências do Google Sheets passam a ser a fonte principal.
+  // Isto evita que referências antigas/corrompidas em localStorage voltem
+  // a substituir os valores corrigidos na cloud.
+  return withDefaultReferences({
+    ...localRefs,
+    ...cloudRefs
   })
-
-  return withDefaultReferences(mergedRefs)
 }
 
 function mergeCloudWithLocalData(cloudData = {}, localData = {}) {
@@ -428,7 +452,7 @@ function App() {
   const [impactBiomarkerId, setImpactBiomarkerId] = useState(null)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Ligado' : 'Não configurado')
-  const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'Dados locais antigos ignorados. A carregar dados atuais da cloud.' : 'Configura o Apps Script para ativar a sincronização.')
+  const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'Referências locais antigas ignoradas. A carregar dados atuais da cloud.' : 'Configura o Apps Script para ativar a sincronização.')
 
   useEffect(() => saveJson(STORAGE.exams, exams), [exams])
   useEffect(() => saveJson(STORAGE.diary, diary), [diary])
