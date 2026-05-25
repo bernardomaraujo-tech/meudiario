@@ -27,140 +27,39 @@ const STORAGE = {
   diary: 'ads_diary_v2',
   behaviours: 'ads_behaviours_v3',
   refs: 'ads_refs_v2',
-  dataVersion: 'ads_data_version_v1'
+  dataVersion: 'ads_data_version_v1',
+  localResetVersion: 'ads_local_reset_version_v1'
 }
-function corrigirReferenciasCriticas() {
-  const ss = spreadsheet_()
-  const sheet = ss.getSheetByName('Referencias')
 
-  if (!sheet) {
-    throw new Error('Folha Referencias não encontrada.')
+const CLOUD_DATA_VERSION = '2026-05-25-correcao-final'
+
+const LOCAL_KEYS_TO_FORGET = [
+  'ads_exams_v2',
+  'ads_diary_v2',
+  'ads_behaviours_v3',
+  'ads_refs_v2',
+  'ads_data_version_v1'
+]
+
+function forgetOldLocalDataIfNeeded() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return
+
+    const alreadyResetForVersion = localStorage.getItem(STORAGE.localResetVersion)
+
+    if (alreadyResetForVersion === CLOUD_DATA_VERSION) return
+
+    LOCAL_KEYS_TO_FORGET.forEach((key) => {
+      localStorage.removeItem(key)
+    })
+
+    localStorage.setItem(STORAGE.localResetVersion, CLOUD_DATA_VERSION)
+  } catch {
+    // Se o browser bloquear o localStorage, a app continua a funcionar com a cloud.
   }
-
-  const values = sheet.getDataRange().getValues()
-  const headers = values[0]
-
-  const col = {
-    biomarcadorId: headers.indexOf('biomarcadorId'),
-    refMin: headers.indexOf('refMin'),
-    refMax: headers.indexOf('refMax'),
-    alvoMin: headers.indexOf('alvoMin'),
-    alvoMax: headers.indexOf('alvoMax'),
-    direcao: headers.indexOf('direcao')
-  }
-
-  if (Object.values(col).some((i) => i === -1)) {
-    throw new Error('Cabeçalhos esperados não encontrados na folha Referencias.')
-  }
-
-  const correcoes = {
-    potassio: {
-      refMin: 3.5,
-      refMax: 5.5,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'range'
-    },
-    calcio_total: {
-      refMin: 8.7,
-      refMax: 10.4,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'range'
-    },
-    fosforo_inorganico: {
-      refMin: 2.4,
-      refMax: 5.5,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'lower'
-    },
-    magnesio: {
-      refMin: 1.6,
-      refMax: 2.6,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'range'
-    },
-    albumina: {
-      refMin: 3.3,
-      refMax: 5.0,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'higher'
-    },
-    creatininemia: {
-      refMin: 0.7,
-      refMax: 1.3,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'range'
-    },
-    proteinas_totais: {
-      refMin: 5.7,
-      refMax: 8.2,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'range'
-    },
-    acido_urico: {
-      refMin: 3.7,
-      refMax: 9.2,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'lower'
-    },
-    hemoglobina_glicada: {
-      refMin: 3.4,
-      refMax: 7.0,
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'lower'
-    },
-    glicemia_media_estimada: {
-      refMin: 5.7,
-      refMax: '',
-      alvoMin: '',
-      alvoMax: '',
-      direcao: 'lower'
-    }
-  }
-
-  const rowsToDelete = []
-
-  for (let r = 1; r < values.length; r++) {
-    const id = String(values[r][col.biomarcadorId] || '').trim()
-
-    if (id === 'peixe') {
-      rowsToDelete.push(r + 1)
-      continue
-    }
-
-    if (!correcoes[id]) continue
-
-    const c = correcoes[id]
-
-    sheet.getRange(r + 1, col.refMin + 1).setNumberFormat('0.00')
-    sheet.getRange(r + 1, col.refMax + 1).setNumberFormat('0.00')
-    sheet.getRange(r + 1, col.alvoMin + 1).setNumberFormat('0.00')
-    sheet.getRange(r + 1, col.alvoMax + 1).setNumberFormat('0.00')
-
-    sheet.getRange(r + 1, col.refMin + 1).setValue(c.refMin)
-    sheet.getRange(r + 1, col.refMax + 1).setValue(c.refMax)
-    sheet.getRange(r + 1, col.alvoMin + 1).setValue(c.alvoMin)
-    sheet.getRange(r + 1, col.alvoMax + 1).setValue(c.alvoMax)
-    sheet.getRange(r + 1, col.direcao + 1).setValue(c.direcao)
-  }
-
-  rowsToDelete.reverse().forEach((rowNumber) => {
-    sheet.deleteRow(rowNumber)
-  })
-
-  SpreadsheetApp.flush()
-
-  Logger.log('Referências críticas corrigidas.')
-  return 'Referências críticas corrigidas.'
 }
+
+forgetOldLocalDataIfNeeded()
 function todayISO() {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
@@ -411,7 +310,7 @@ function App() {
   const [impactBiomarkerId, setImpactBiomarkerId] = useState(null)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Ligado' : 'Não configurado')
-  const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'A cloud está pronta a sincronizar.' : 'Configura o Apps Script para ativar a sincronização.')
+  const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'Dados locais antigos ignorados. A carregar dados atuais da cloud.' : 'Configura o Apps Script para ativar a sincronização.')
 
   useEffect(() => saveJson(STORAGE.exams, exams), [exams])
   useEffect(() => saveJson(STORAGE.diary, diary), [diary])
@@ -490,6 +389,12 @@ function App() {
     if (!isCloudConfigured()) return
 
     if (isLoadingCloudRef.current) {
+      return
+    }
+
+    if (!dataVersion) {
+      setCloudStatus('A carregar')
+      setCloudMessage('Antes de guardar, a app precisa de carregar a versão atual da cloud. Clica em Carregar cloud e tenta novamente.')
       return
     }
 
