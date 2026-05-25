@@ -54,17 +54,49 @@ export const biomarkers = [
   { id: 'paratormona_pth', name: 'Paratormona PTH', aliases: ['Paratomona PTH', 'Paratormona', 'Parathormona', 'PTH'], unit: 'pg/mL', category: 'Osso e Mineral', direction: 'range', description: 'Hormona envolvida no equilíbrio do cálcio e fósforo. Muito relevante em doentes em hemodiálise.' }
 ]
 
-export const defaultReferences = biomarkers.reduce((acc, biomarker) => {
-  acc[biomarker.id] = {
-    sufficientMin: '',
-    sufficientMax: '',
-    idealMin: '',
-    idealMax: '',
-    direction: biomarker.direction || 'range'
-  }
-
-  return acc
-}, {})
+export const defaultReferences = {
+  hemoglobina: { sufficientMin: '13', sufficientMax: '17', idealMin: '', idealMax: '', direction: 'range' },
+  eritrocitos: { sufficientMin: '4.5', sufficientMax: '5.5', idealMin: '', idealMax: '', direction: 'range' },
+  hematocrito: { sufficientMin: '40', sufficientMax: '50', idealMin: '', idealMax: '', direction: 'range' },
+  vgm: { sufficientMin: '83', sufficientMax: '101', idealMin: '', idealMax: '', direction: 'range' },
+  hgm: { sufficientMin: '27', sufficientMax: '32', idealMin: '', idealMax: '', direction: 'range' },
+  cmhg: { sufficientMin: '31.5', sufficientMax: '34.5', idealMin: '', idealMax: '', direction: 'range' },
+  rdw: { sufficientMin: '15.7', sufficientMax: '16.7', idealMin: '', idealMax: '', direction: 'range' },
+  leucocitos: { sufficientMin: '4', sufficientMax: '10', idealMin: '', idealMax: '', direction: 'range' },
+  neutrofilos: { sufficientMin: '2', sufficientMax: '7', idealMin: '', idealMax: '', direction: 'range' },
+  eosinofilos: { sufficientMin: '0.02', sufficientMax: '0.5', idealMin: '', idealMax: '', direction: 'range' },
+  basofilos: { sufficientMin: '0.01', sufficientMax: '0.1', idealMin: '', idealMax: '', direction: 'range' },
+  linfocitos: { sufficientMin: '1', sufficientMax: '3', idealMin: '', idealMax: '', direction: 'range' },
+  monocitos: { sufficientMin: '0.2', sufficientMax: '1', idealMin: '', idealMax: '', direction: 'range' },
+  plaquetas: { sufficientMin: '150', sufficientMax: '400', idealMin: '', idealMax: '', direction: 'range' },
+  ferro_serico: { sufficientMin: '65', sufficientMax: '175', idealMin: '', idealMax: '', direction: 'range' },
+  ferritina: { sufficientMin: '30', sufficientMax: '340', idealMin: '', idealMax: '', direction: 'range' },
+  capacidade_fixacao_ferro: { sufficientMin: '250', sufficientMax: '450', idealMin: '', idealMax: '', direction: 'range' },
+  sideremia: { sufficientMin: '65', sufficientMax: '175', idealMin: '', idealMax: '', direction: 'range' },
+  proteina_c_reactiva: { sufficientMin: '0.05', sufficientMax: '1', idealMin: '', idealMax: '', direction: 'range' },
+  ureia_pre_dialise: { sufficientMin: '50', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
+  ureia_pos_dialise: { sufficientMin: '50', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
+  albumina: { sufficientMin: '3.3', sufficientMax: '5', idealMin: '', idealMax: '', direction: 'range' },
+  creatininemia: { sufficientMin: '0.7', sufficientMax: '1.3', idealMin: '', idealMax: '', direction: 'range' },
+  proteinas_totais: { sufficientMin: '5.7', sufficientMax: '8.2', idealMin: '', idealMax: '', direction: 'range' },
+  alanina_aminotransferase: { sufficientMin: '10', sufficientMax: '49', idealMin: '', idealMax: '', direction: 'range' },
+  fosfatase_alcalina: { sufficientMin: '38', sufficientMax: '129', idealMin: '', idealMax: '', direction: 'range' },
+  sodio: { sufficientMin: '135', sufficientMax: '145', idealMin: '', idealMax: '', direction: 'range' },
+  magnesio: { sufficientMin: '1.6', sufficientMax: '2.6', idealMin: '', idealMax: '', direction: 'range' },
+  colesterol_total: { sufficientMin: '190', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
+  colesterol_ldl: { sufficientMin: '115', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
+  colesterol_hdl: { sufficientMin: '35', sufficientMax: '55', idealMin: '', idealMax: '', direction: 'range' },
+  trigliceridos: { sufficientMin: '', sufficientMax: '150', idealMin: '', idealMax: '', direction: 'lower' },
+  potassio: { sufficientMin: '3.5', sufficientMax: '5.5', idealMin: '', idealMax: '', direction: 'range' },
+  calcio_total: { sufficientMin: '8.7', sufficientMax: '10.4', idealMin: '', idealMax: '', direction: 'range' },
+  fosforo_inorganico: { sufficientMin: '2.4', sufficientMax: '5.5', idealMin: '', idealMax: '', direction: 'range' },
+  acido_urico: { sufficientMin: '3.7', sufficientMax: '9.2', idealMin: '', idealMax: '', direction: 'range' },
+  hemoglobina_glicada: { sufficientMin: '3.4', sufficientMax: '7', idealMin: '', idealMax: '', direction: 'range' },
+  glicemia_media_estimada: { sufficientMin: '5.7', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
+  glicemia: { sufficientMin: '70', sufficientMax: '110', idealMin: '', idealMax: '', direction: 'range' },
+  psa_total: { sufficientMin: '4', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
+  paratormona_pth: { sufficientMin: '18', sufficientMax: '80', idealMin: '', idealMax: '', direction: 'range' },
+}
 
 export const defaultBehaviours = [
   { id: 'peixe', label: 'Peixe', category: 'Proteína' },
