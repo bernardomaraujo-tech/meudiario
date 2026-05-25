@@ -31,7 +31,7 @@ const STORAGE = {
   localResetVersion: 'ads_local_reset_version_v1'
 }
 
-const CLOUD_DATA_VERSION = '2026-05-25-correcao-final'
+const CLOUD_DATA_VERSION = '2026-05-25-correcao-classificacao-final'
 
 const LOCAL_KEYS_TO_FORGET = [
   'ads_exams_v2',
@@ -273,7 +273,7 @@ function withDefaultBehaviours(value) {
   return [...value, ...missingDefaults]
 }
 
-function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal']) {
+function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal', 'sufficient', 'unknown', 'empty']) {
   if (!exam || !exam.values) return []
 
   return biomarkers
@@ -757,16 +757,21 @@ function AnalysisView({ exam, refs, onSelect }) {
 
   const grouped = {
     out: cards.filter((c) => c.status === 'out'),
-    ideal: cards.filter((c) => c.status === 'ideal'),
-    unknown: cards.filter((c) => c.status === 'unknown')
+    ideal: cards.filter((c) => c.status === 'ideal' || c.status === 'sufficient'),
+    unknown: cards.filter((c) => c.status === 'unknown' || c.status === 'empty')
   }
 
   const filteredCards = cards.filter((c) => {
     return `${c.biomarker.name} ${c.biomarker.category}`.toLowerCase().includes(query.toLowerCase())
   })
 
-  const visibleStatuses = ['out', 'ideal']
-  const orderedCards = visibleStatuses.flatMap((status) => filteredCards.filter((c) => c.status === status))
+  const statusOrder = ['out', 'ideal', 'sufficient', 'unknown', 'empty']
+  const orderedCards = [...filteredCards].sort((a, b) => {
+    const aIndex = statusOrder.indexOf(a.status) === -1 ? statusOrder.length : statusOrder.indexOf(a.status)
+    const bIndex = statusOrder.indexOf(b.status) === -1 ? statusOrder.length : statusOrder.indexOf(b.status)
+
+    return aIndex - bIndex || a.biomarker.name.localeCompare(b.biomarker.name, 'pt-PT')
+  })
 
   if (!exam) {
     return <EmptyState title="Ainda não existem análises" text="Começa por inserir uma análise. Depois a app mostra aqui o resumo por biomarcador." />
@@ -778,9 +783,10 @@ function AnalysisView({ exam, refs, onSelect }) {
         {exam.name || 'Análise'} · {formatDate(exam.date)}{exam.time ? ` · ${exam.time}` : ''}
       </div>
 
-      <div className="status-grid two-cols">
+      <div className="status-grid">
         <StatusCard label="Fora do intervalo" count={grouped.out.length} status="out" />
         <StatusCard label="Ideal" count={grouped.ideal.length} status="ideal" />
+        <StatusCard label="Sem referência" count={grouped.unknown.length} status="unknown" />
       </div>
 
       <div className="search-box">
@@ -803,7 +809,7 @@ function AnalysisView({ exam, refs, onSelect }) {
       </div>
 
       {!orderedCards.length && (
-        <EmptyState title="Sem resultados" text="Não existem biomarcadores fora do intervalo ou ideais com esse filtro." compact />
+        <EmptyState title="Sem resultados" text="Não existem biomarcadores com esse filtro." compact />
       )}
     </section>
   )
@@ -834,9 +840,10 @@ function HistoryView({ exams, refs, onOpenExam, onNewExam }) {
 
       <div className="history-list">
         {orderedExams.map((exam) => {
-          const cards = latestBiomarkerCards(exam, refs, ['out', 'ideal'])
+          const cards = latestBiomarkerCards(exam, refs, ['out', 'ideal', 'sufficient', 'unknown', 'empty'])
           const outCount = cards.filter((c) => c.status === 'out').length
-          const idealCount = cards.filter((c) => c.status === 'ideal').length
+          const idealCount = cards.filter((c) => c.status === 'ideal' || c.status === 'sufficient').length
+          const unknownCount = cards.filter((c) => c.status === 'unknown' || c.status === 'empty').length
 
           return (
             <button key={exam.id} className="history-card" onClick={() => onOpenExam(exam.id)}>
@@ -851,6 +858,7 @@ function HistoryView({ exams, refs, onOpenExam, onNewExam }) {
                 <span>{Object.keys(exam.values || {}).length} resultados</span>
                 <em className="pill out">! Fora: {outCount}</em>
                 <em className="pill ideal">✓ Ideal: {idealCount}</em>
+                {unknownCount > 0 && <em className="pill unknown">? Sem ref.: {unknownCount}</em>}
               </div>
             </button>
           )
