@@ -1429,7 +1429,7 @@ function shiftDate(dateText, delta) {
 }
 
 function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelected }) {
-  const targetCards = useMemo(() => latestBiomarkerCards(latestExam, refs, ['out']), [latestExam, refs])
+  const targetCards = useMemo(() => latestBiomarkerCards(latestExam, refs), [latestExam, refs])
   const targetBiomarkers = targetCards.map((card) => card.biomarker)
   const fallbackSelected = initialSelected || targetBiomarkers[0]?.id || biomarkers[0]?.id
   const [selected, setSelected] = useState(fallbackSelected)
@@ -1458,13 +1458,13 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
   const helpful = impactRows.filter((row) => validImpact(row) && row.score > 3).slice(0, 3)
 
   if (!latestExam) {
-    return <EmptyState title="Ainda não existem análises" text="Insere primeiro uma análise para a app identificar os biomarcadores que merecem acompanhamento." />
+    return <EmptyState title="Ainda não existem análises" text="Insere primeiro uma análise para a app conseguir cruzar biomarcadores com o diário de comportamentos." />
   }
 
   if (!targetBiomarkers.length) {
     return (
       <section className="screen">
-        <EmptyState title="Sem biomarcadores a acompanhar" text="Na última análise não existem biomarcadores fora do intervalo. A análise de impacto fica disponível quando existir algum ponto prioritário a acompanhar." />
+        <EmptyState title="Sem biomarcadores para analisar" text="A última análise não tem biomarcadores com valor preenchido. A análise de impacto fica disponível quando existir pelo menos um valor registado." />
       </section>
     )
   }
@@ -1474,9 +1474,9 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
       <div className="intro-card clinical">
         <div className="intro-icon"><Activity size={22} /></div>
         <div>
-          <p className="eyebrow">Análise orientada</p>
-          <h2>Impacto nos biomarcadores fora do intervalo</h2>
-          <p>A app analisa prioritariamente os biomarcadores fora do intervalo na última análise.</p>
+          <p className="eyebrow">Análise geral</p>
+          <h2>Impacto em todos os biomarcadores</h2>
+          <p>Seleciona qualquer biomarcador com valor na última análise e cruza-o com o diário de comportamentos.</p>
         </div>
       </div>
 
@@ -1580,7 +1580,7 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
   const followUpCards = useMemo(() => {
     const q = query.trim().toLowerCase()
 
-    return latestBiomarkerCards(latestExam, refs, ['out', 'ideal'])
+    return latestBiomarkerCards(latestExam, refs)
       .filter((card) => {
         return !q || `${card.biomarker.name} ${card.biomarker.category} ${card.biomarker.description}`.toLowerCase().includes(q)
       })
@@ -1598,7 +1598,7 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
         <div>
           <p className="eyebrow">Acompanhamento</p>
           <h2>Estado dos biomarcadores</h2>
-          <p>Esta área mostra os biomarcadores da última análise em dois estados: fora do intervalo ou ideal.</p>
+          <p>Esta área mostra todos os biomarcadores com valor na última análise, incluindo fora do intervalo, ideal e sem referência.</p>
         </div>
       </div>
 
@@ -1613,11 +1613,11 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
       </div>
 
       {!latestExam && (
-        <EmptyState title="Ainda não existem análises" text="Insere uma análise para aparecerem aqui os biomarcadores que merecem acompanhamento." compact />
+        <EmptyState title="Ainda não existem análises" text="Insere uma análise para aparecerem aqui os biomarcadores registados." compact />
       )}
 
       {latestExam && !followUpCards.length && (
-        <EmptyState title="Sem biomarcadores classificados" text="Com os dados atuais, não existem biomarcadores classificados como fora do intervalo ou ideal na última análise." compact />
+        <EmptyState title="Sem biomarcadores com valor" text="Com os dados atuais, a última análise não tem biomarcadores com valor preenchido." compact />
       )}
 
       <div className="followup-list">
@@ -1645,7 +1645,7 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
 
       <div className="info-card warning-soft">
         <Sparkle />
-        <p>O objetivo é cruzar os biomarcadores fora do intervalo com o diário de comportamentos e gerar pistas de melhoria. As sugestões são apoio ao acompanhamento, não decisão clínica.</p>
+        <p>O objetivo é cruzar todos os biomarcadores registados com o diário de comportamentos e gerar pistas de melhoria. As sugestões são apoio ao acompanhamento, não decisão clínica.</p>
       </div>
 
       <div className="section-header">
