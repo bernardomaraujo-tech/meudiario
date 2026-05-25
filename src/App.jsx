@@ -1072,7 +1072,7 @@ function buildImpactRows({ behaviours, exams, diary, biomarker, refs, windowDays
         if (!related.length) return
 
         const hadYes = related.some((d) => d.value === true)
-        const hadOnlyNo = related.every((d) => d.value === false)
+        const hadOnlyNo = related.every((d) => d.value !== true)
 
         if (hadYes) yesValues.push(value)
         if (hadOnlyNo) noValues.push(value)
@@ -1334,10 +1334,16 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
 
   useEffect(() => {
     const existing = diary.filter((d) => d.date === date)
+    const existingValues = Object.fromEntries(
+      existing
+        .filter((d) => d.behaviourId !== '__note__')
+        .map((d) => [d.behaviourId, d.value === true])
+    )
+    const defaultNoValues = Object.fromEntries(behaviours.map((b) => [b.id, existingValues[b.id] === true]))
 
-    setValues(Object.fromEntries(existing.filter((d) => d.behaviourId !== '__note__').map((d) => [d.behaviourId, d.value])))
+    setValues(defaultNoValues)
     setNote(existing.find((d) => d.behaviourId === '__note__')?.note || '')
-  }, [date, diary])
+  }, [date, diary, behaviours])
 
   function setAnswer(id, value) {
     setValues({ ...values, [id]: value })
@@ -1358,12 +1364,13 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
     if (behaviours.some((b) => b.id === id)) return
 
     setBehaviours([...behaviours, { id, label, category: 'Personalizado' }])
+    setValues((current) => ({ ...current, [id]: false }))
     setNewBehaviour('')
   }
 
   function saveDiary() {
     const otherDays = diary.filter((d) => d.date !== date)
-    const dayRows = behaviours.map((b) => ({ date, behaviourId: b.id, label: b.label, value: values[b.id] ?? null }))
+    const dayRows = behaviours.map((b) => ({ date, behaviourId: b.id, label: b.label, value: values[b.id] === true }))
     const noteRow = { date, behaviourId: '__note__', label: 'Nota diária', value: null, note }
     const nextDiary = [...otherDays, ...dayRows, noteRow]
 
@@ -1388,6 +1395,7 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
 
       <div className="section-header">
         <h3>Comportamentos do dia anterior</h3>
+        <span>Por defeito: Não</span>
       </div>
 
       <div className="diary-list">
