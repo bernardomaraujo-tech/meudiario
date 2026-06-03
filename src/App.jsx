@@ -31,7 +31,7 @@ const STORAGE = {
   localResetVersion: 'ads_local_reset_version_v1'
 }
 
-const CLOUD_DATA_VERSION = '2026-05-25-referencias-cloud-prioritaria-v2'
+const CLOUD_DATA_VERSION = '2026-06-03-comportamentos-diario-v1'
 
 const LOCAL_KEYS_TO_FORGET = [
   'ads_refs_v2'
@@ -328,13 +328,88 @@ function withDefaultReferences(value) {
   return mergedRefs
 }
 
+const legacyBehaviourIdMap = {
+  comida_processada: 'enchidos_fumados',
+  fast_food: 'refeicao_fora_fast_food',
+  croissant_pastelaria: 'doces_pastelaria'
+}
+
+const deprecatedBehaviourIds = new Set([
+  'bolo_caseiro',
+  'bolo_fabrico',
+  'fruta',
+  'iogurte_proteina',
+  'comida_processada',
+  'fast_food',
+  'croissant_pastelaria',
+  'dialise'
+])
+
+function normalizeDiaryBehaviours(value) {
+  if (!Array.isArray(value)) return []
+
+  const normalized = new Map()
+
+  value.forEach((item) => {
+    if (!item || typeof item !== 'object') return
+
+    if (item.behaviourId === '__note__') {
+      normalized.set([item.date || '', '__note__'].join('|'), item)
+      return
+    }
+
+    const mappedId = legacyBehaviourIdMap[item.behaviourId] || item.behaviourId
+    const mappedBehaviour = defaultBehaviours.find((behaviour) => behaviour.id === mappedId)
+    const normalizedItem = {
+      ...item,
+      behaviourId: mappedId,
+      label: mappedBehaviour?.label || item.label
+    }
+    const key = [normalizedItem.date || '', normalizedItem.behaviourId || ''].join('|')
+    const existing = normalized.get(key)
+
+    if (!existing) {
+      normalized.set(key, normalizedItem)
+      return
+    }
+
+    normalized.set(key, {
+      ...existing,
+      ...normalizedItem,
+      value: existing.value === true || normalizedItem.value === true
+    })
+  })
+
+  return Array.from(normalized.values())
+}
+
 function withDefaultBehaviours(value) {
   if (!Array.isArray(value) || value.length === 0) return defaultBehaviours
 
-  const existingIds = new Set(value.map((item) => item.id))
-  const missingDefaults = defaultBehaviours.filter((item) => !existingIds.has(item.id))
+  const existingById = new Map(
+    value
+      .filter((item) => item && typeof item === 'object' && item.id)
+      .map((item) => [legacyBehaviourIdMap[item.id] || item.id, item])
+  )
 
-  return [...value, ...missingDefaults]
+  const defaultIds = new Set(defaultBehaviours.map((item) => item.id))
+  const normalizedDefaults = defaultBehaviours.map((item) => ({
+    ...(existingById.get(item.id) || {}),
+    ...item
+  }))
+
+  const customBehaviours = value.filter((item) => {
+    if (!item || typeof item !== 'object' || !item.id) return false
+
+    const normalizedId = legacyBehaviourIdMap[item.id] || item.id
+
+    if (defaultIds.has(normalizedId)) return false
+    if (deprecatedBehaviourIds.has(item.id)) return false
+
+    return true
+  })
+
+  return [...normalizedDefaults, ...customBehaviours]
 }
 
 function listKeyExam(item) {
@@ -400,7 +475,7 @@ function mergeReferencesForCloud(cloudRefsInput, localRefsInput) {
 
 function mergeCloudWithLocalData(cloudData = {}, localData = {}) {
   const examsMerged = mergeListByKey(cloudData.exams, localData.exams, listKeyExam).sort(sortExamDate)
-  const diaryMerged = mergeListByKey(cloudData.diary, localData.diary, listKeyDiary)
+  const diaryMerged = normalizeDiaryBehaviours(mergeListByKey(cloudData.diary, localData.diary, listKeyDiary))
   const behavioursMerged = withDefaultBehaviours(
     mergeListByKey(cloudData.behaviours, localData.behaviours, listKeyBehaviour)
   )
@@ -442,7 +517,7 @@ function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal', 'su
 function App() {
   const [tab, setTab] = useState('analysis')
   const [exams, setExams] = useState(() => loadJson(STORAGE.exams, []))
-  const [diary, setDiary] = useState(() => loadJson(STORAGE.diary, []))
+  const [diary, setDiary] = useState(() => normalizeDiaryBehaviours(loadJson(STORAGE.diary, [])))
   const [behaviours, setBehaviours] = useState(() => withDefaultBehaviours(loadJson(STORAGE.behaviours, defaultBehaviours)))
   const [refs, setRefs] = useState(() => withDefaultReferences(loadJson(STORAGE.refs, defaultReferences)))
   const [dataVersion, setDataVersion] = useState(() => localStorage.getItem(STORAGE.dataVersion) || '')
