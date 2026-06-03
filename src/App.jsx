@@ -342,8 +342,38 @@ const deprecatedBehaviourIds = new Set([
   'comida_processada',
   'fast_food',
   'croissant_pastelaria',
-  'dialise'
+  'dialise',
+  'tratamento_a_noite',
+  'tratamento_a_tarde',
+  'tratamento_noite',
+  'tratamento_tarde'
 ])
+
+const deprecatedBehaviourLabels = new Set([
+  'tratamento à noite',
+  'tratamento a noite',
+  'tratamento à tarde',
+  'tratamento a tarde'
+])
+
+function normalizeTextKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function sortBehavioursByLabel(value) {
+  if (!Array.isArray(value)) return []
+
+  return [...value].sort((a, b) =>
+    String(a?.label || '').localeCompare(String(b?.label || ''), 'pt-PT', {
+      sensitivity: 'base',
+      numeric: true
+    })
+  )
+}
 
 function normalizeDiaryBehaviours(value) {
   if (!Array.isArray(value)) return []
@@ -359,6 +389,10 @@ function normalizeDiaryBehaviours(value) {
     }
 
     const mappedId = legacyBehaviourIdMap[item.behaviourId] || item.behaviourId
+
+    if (deprecatedBehaviourIds.has(item.behaviourId) || deprecatedBehaviourIds.has(mappedId)) return
+    if (deprecatedBehaviourLabels.has(normalizeTextKey(item.label))) return
+
     const mappedBehaviour = defaultBehaviours.find((behaviour) => behaviour.id === mappedId)
     const normalizedItem = {
       ...item,
@@ -384,7 +418,7 @@ function normalizeDiaryBehaviours(value) {
 }
 
 function withDefaultBehaviours(value) {
-  if (!Array.isArray(value) || value.length === 0) return defaultBehaviours
+  if (!Array.isArray(value) || value.length === 0) return sortBehavioursByLabel(defaultBehaviours)
 
   const existingById = new Map(
     value
@@ -404,12 +438,13 @@ function withDefaultBehaviours(value) {
     const normalizedId = legacyBehaviourIdMap[item.id] || item.id
 
     if (defaultIds.has(normalizedId)) return false
-    if (deprecatedBehaviourIds.has(item.id)) return false
+    if (deprecatedBehaviourIds.has(item.id) || deprecatedBehaviourIds.has(normalizedId)) return false
+    if (deprecatedBehaviourLabels.has(normalizeTextKey(item.label))) return false
 
     return true
   })
 
-  return [...normalizedDefaults, ...customBehaviours]
+  return sortBehavioursByLabel([...normalizedDefaults, ...customBehaviours])
 }
 
 function listKeyExam(item) {
@@ -1462,7 +1497,7 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
 
     if (behaviours.some((b) => b.id === id)) return
 
-    setBehaviours([...behaviours, { id, label, category: 'Personalizado' }])
+    setBehaviours(sortBehavioursByLabel([...behaviours, { id, label, category: 'Personalizado' }]))
     setValues((current) => ({ ...current, [id]: false }))
     setNewBehaviour('')
   }
