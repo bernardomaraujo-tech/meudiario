@@ -100,42 +100,46 @@ export const defaultReferences = {
 
 export const defaultBehaviours = [
   { id: 'peixe', label: 'Peixe', category: 'Proteína' },
-  { id: 'carne_branca', label: 'Carne branca', category: 'Proteína' },
-  { id: 'carne_vermelha', label: 'Carne vermelha', category: 'Proteína' },
-  { id: 'enchidos_fumados', label: 'Enchidos ou fumados', category: 'Proteína' },
+  { id: 'carne_branca', label: 'Carne Branca', category: 'Proteína' },
+  { id: 'carne_vermelha', label: 'Carne Vermelha', category: 'Proteína' },
+  { id: 'refeicao_salgada', label: 'Salgados', category: 'Sal' },
+  { id: 'enchidos_fumados', label: 'Enchidos ou Carne Processada', category: 'Proteína' },
   { id: 'marisco', label: 'Marisco', category: 'Proteína' },
+  { id: 'ovos', label: 'Ovos', category: 'Proteína' },
+  { id: 'claras', label: 'Claras', category: 'Proteína' },
 
-  { id: 'batata', label: 'Batata', category: 'Hidratos' },
-  { id: 'arroz_massa', label: 'Arroz ou massa', category: 'Hidratos' },
+  { id: 'laticinios', label: 'Laticínios', category: 'Laticínios' },
+  { id: 'iogurte_normal', label: 'Iogurte Normal', category: 'Laticínios' },
+  { id: 'iogurte_vegan', label: 'Iogurte Vegan', category: 'Laticínios' },
+  { id: 'queijo', label: 'Queijo', category: 'Laticínios' },
+  { id: 'leite', label: 'Leite', category: 'Laticínios' },
+
+  { id: 'leguminosas', label: 'Leguminosas', category: 'Vegetais e Leguminosas' },
+  { id: 'frutos_secos', label: 'Frutos Secos ou Sementes', category: 'Snacks' },
+  { id: 'batata', label: 'Batata, Tomate, Espinafres', category: 'Potássio' },
+  { id: 'fruta_rica_potassio', label: 'Fruta Rica em Potássio', category: 'Potássio' },
+  { id: 'fruta_baixa_potassio', label: 'Fruta Baixa em Potássio', category: 'Potássio' },
+  { id: 'legumes_baixos_potassio', label: 'Legumes Baixos em Potássio', category: 'Potássio' },
+
+  { id: 'refeicao_fora_fast_food', label: 'Refeição Fora ou Fast Food', category: 'Refeições fora' },
+  { id: 'refrigerante_cola', label: 'Refrigerante Tipo Cola', category: 'Bebidas' },
+  { id: 'doces_pastelaria', label: 'Doces ou Pastelaria', category: 'Doces' },
+  { id: 'liquidos_acima_limite', label: 'Líquidos Acima do Limite', category: 'Bebidas' },
+
+  { id: 'quelante_fosforo', label: 'Quelante de Fósforo à Refeição', category: 'Medicação' },
+  { id: 'arroz_massa', label: 'Arroz ou Massa', category: 'Hidratos' },
   { id: 'pao', label: 'Pão', category: 'Hidratos' },
-  { id: 'croissant_pastelaria', label: 'Croissant ou pastelaria', category: 'Doces' },
-  { id: 'bolo_caseiro', label: 'Bolo caseiro', category: 'Doces' },
-  { id: 'bolo_fabrico', label: 'Bolo de fabrico', category: 'Doces' },
   { id: 'bolachas', label: 'Bolachas', category: 'Doces' },
   { id: 'chocolate', label: 'Chocolate', category: 'Doces' },
 
   { id: 'salada', label: 'Salada', category: 'Vegetais' },
-  { id: 'legumes_cozidos', label: 'Legumes cozidos', category: 'Vegetais' },
+  { id: 'legumes_cozidos', label: 'Legumes Cozidos', category: 'Vegetais' },
   { id: 'sopa', label: 'Sopa', category: 'Vegetais' },
-  { id: 'fruta', label: 'Fruta', category: 'Fruta' },
   { id: 'banana', label: 'Banana', category: 'Fruta' },
-  { id: 'frutos_secos', label: 'Frutos secos', category: 'Snacks' },
 
-  { id: 'iogurte_proteina', label: 'Iogurte de proteína', category: 'Laticínios' },
-  { id: 'iogurte_normal', label: 'Iogurte normal', category: 'Laticínios' },
-  { id: 'queijo', label: 'Queijo', category: 'Laticínios' },
-  { id: 'leite', label: 'Leite', category: 'Laticínios' },
-
-  { id: 'refrigerante_cola', label: 'Refrigerante tipo cola', category: 'Bebidas' },
   { id: 'alcool', label: 'Álcool', category: 'Bebidas' },
-  { id: 'liquidos_acima_limite', label: 'Líquidos acima do limite', category: 'Rotina' },
-
-  { id: 'refeicao_salgada', label: 'Refeição salgada', category: 'Sal' },
-  { id: 'comida_processada', label: 'Comida processada', category: 'Sal' },
-  { id: 'fast_food', label: 'Fast food', category: 'Sal' },
-
-  { id: 'quelante_fosforo', label: 'Quelante do fósforo à refeição', category: 'Medicação' },
-  { id: 'esquecimento_medicacao', label: 'Esquecimento de medicação', category: 'Medicação' },
-  { id: 'dialise', label: 'Sessão de diálise', category: 'Tratamento' },
-  { id: 'atividade_fisica', label: 'Atividade física', category: 'Rotina' }
+  { id: 'esquecimento_medicacao', label: 'Esquecimento da Medicação', category: 'Medicação' },
+  { id: 'sessao_dialise_6h30m', label: 'Sessão de Diálise 6h30m', category: 'Tratamento' },
+  { id: 'sessao_dialise_4h', label: 'Sessão de Diálise 4h', category: 'Tratamento' },
+  { id: 'atividade_fisica', label: 'Atividade Física', category: 'Rotina' }
 ]
