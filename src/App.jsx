@@ -25,17 +25,21 @@ import { getAllCloudData, isCloudConfigured, saveAllCloudData } from './services
 const STORAGE = {
   exams: 'ads_exams_v2',
   diary: 'ads_diary_v2',
-  behaviours: 'ads_behaviours_v3',
+  behaviours: 'ads_behaviours_v4_lista_fechada',
   refs: 'ads_refs_v2',
   dataVersion: 'ads_data_version_v1',
   localResetVersion: 'ads_local_reset_version_v1'
 }
 
-const CLOUD_DATA_VERSION = '2026-06-05-comportamentos-diario-v4-lista-final'
+const CLOUD_DATA_VERSION = '2026-06-05-comportamentos-diario-v7-lista-fechada-sem-duplicados'
 
 const LOCAL_KEYS_TO_FORGET = [
   'ads_refs_v2',
-  'ads_behaviours_v3'
+  'ads_behaviours_v1',
+  'ads_behaviours_v2',
+  'ads_behaviours_v3',
+  'ads_behaviours_v4',
+  'ads_behaviours_v4_lista_fechada'
 ]
 
 function forgetOldLocalDataIfNeeded() {
@@ -374,7 +378,9 @@ const legacyBehaviourLabelMap = {
   'sessao dialise 6h30m': 'sessao_dialise_6h30m',
   'sessao de dialise 6h30m': 'sessao_dialise_6h30m',
   'atividade fisica': 'atividade_fisica',
-  'alcool': 'alcool'
+  'alcool': 'alcool',
+  'iogurte normal': 'iogurte_normal',
+  'iogurte vegan': 'iogurte_vegan'
 }
 
 const deprecatedBehaviourIds = new Set([
@@ -456,10 +462,14 @@ function normalizeDiaryBehaviours(value) {
     if (deprecatedBehaviourLabels.has(normalizeTextKey(item.label))) return
 
     const mappedBehaviour = defaultBehaviours.find((behaviour) => behaviour.id === mappedId)
+
+    // Mantém apenas comportamentos pertencentes à lista final oficial.
+    if (!mappedBehaviour) return
+
     const normalizedItem = {
       ...item,
       behaviourId: mappedId,
-      label: mappedBehaviour?.label || item.label
+      label: mappedBehaviour.label
     }
     const key = [normalizedItem.date || '', normalizedItem.behaviourId || ''].join('|')
     const existing = normalized.get(key)
@@ -479,45 +489,10 @@ function normalizeDiaryBehaviours(value) {
   return Array.from(normalized.values())
 }
 
-function withDefaultBehaviours(value) {
-  if (!Array.isArray(value) || value.length === 0) return sortBehavioursByLabel(defaultBehaviours)
-
-  const existingById = new Map(
-    value
-      .filter((item) => item && typeof item === 'object' && item.id)
-      .map((item) => {
-        const normalizedLabel = normalizeTextKey(item.label)
-        return [legacyBehaviourIdMap[item.id] || legacyBehaviourLabelMap[normalizedLabel] || item.id, item]
-      })
-  )
-
-  const defaultIds = new Set(defaultBehaviours.map((item) => item.id))
-  const defaultLabels = new Set(defaultBehaviours.map((item) => normalizeTextKey(item.label)))
-  const customByLabel = new Map()
-
-  const normalizedDefaults = defaultBehaviours.map((item) => ({
-    ...(existingById.get(item.id) || {}),
-    ...item
-  }))
-
-  value.forEach((item) => {
-    if (!item || typeof item !== 'object' || !item.id) return
-
-    const normalizedLabel = normalizeTextKey(item.label)
-    const normalizedId = legacyBehaviourIdMap[item.id] || legacyBehaviourLabelMap[normalizedLabel] || item.id
-
-    if (defaultIds.has(normalizedId)) return
-    if (defaultLabels.has(normalizedLabel)) return
-    if (deprecatedBehaviourIds.has(item.id) || deprecatedBehaviourIds.has(normalizedId)) return
-    if (deprecatedBehaviourLabels.has(normalizedLabel)) return
-
-    customByLabel.set(normalizedLabel || normalizedId, {
-      ...item,
-      id: normalizedId
-    })
-  })
-
-  return sortBehavioursByLabel([...normalizedDefaults, ...customByLabel.values()])
+function withDefaultBehaviours() {
+  // A lista de comportamentos passa a ser fechada: nem mais, nem menos.
+  // Isto impede que comportamentos antigos guardados em localStorage ou na cloud voltem a aparecer.
+  return sortBehavioursByLabel(defaultBehaviours.map((item) => ({ ...item })))
 }
 
 function listKeyExam(item) {
@@ -637,11 +612,20 @@ function App() {
   const [impactBiomarkerId, setImpactBiomarkerId] = useState(null)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Ligado' : 'Não configurado')
-  const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'Referências locais antigas ignoradas. A carregar dados atuais da cloud.' : 'Configura o Apps Script para ativar a sincronização.')
+  const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'Lista de comportamentos fechada. A carregar dados atuais da cloud.' : 'Configura o Apps Script para ativar a sincronização.')
 
   useEffect(() => saveJson(STORAGE.exams, exams), [exams])
   useEffect(() => saveJson(STORAGE.diary, diary), [diary])
-  useEffect(() => saveJson(STORAGE.behaviours, behaviours), [behaviours])
+  useEffect(() => saveJson(STORAGE.behaviours, withDefaultBehaviours()), [behaviours])
+  useEffect(() => {
+    const exact = withDefaultBehaviours()
+    const currentSignature = behaviours.map((item) => `${item.id}|${item.label}`).join('§')
+    const exactSignature = exact.map((item) => `${item.id}|${item.label}`).join('§')
+
+    if (currentSignature !== exactSignature) {
+      setBehaviours(exact)
+    }
+  }, [behaviours])
   useEffect(() => saveJson(STORAGE.refs, refs), [refs])
   useEffect(() => localStorage.setItem(STORAGE.dataVersion, dataVersion || ''), [dataVersion])
 
@@ -848,7 +832,6 @@ function App() {
             diary={diary}
             setDiary={setDiary}
             behaviours={behaviours}
-            setBehaviours={setBehaviours}
             syncCloudSnapshot={syncCloudSnapshot}
           />
         )}
@@ -1535,11 +1518,10 @@ function TrendChart({ series, refConfig, unit }) {
   )
 }
 
-function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapshot }) {
+function DiaryView({ diary, setDiary, behaviours, syncCloudSnapshot }) {
   const [date, setDate] = useState(yesterdayISO())
   const [values, setValues] = useState({})
   const [note, setNote] = useState('')
-  const [newBehaviour, setNewBehaviour] = useState('')
 
   useEffect(() => {
     const existing = diary.filter((d) => d.date === date)
@@ -1556,25 +1538,6 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
 
   function setAnswer(id, value) {
     setValues({ ...values, [id]: value })
-  }
-
-  function addBehaviour() {
-    const label = newBehaviour.trim()
-
-    if (!label) return
-
-    const id = label
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_|_$/g, '') || crypto.randomUUID()
-
-    if (behaviours.some((b) => b.id === id)) return
-
-    setBehaviours(sortBehavioursByLabel([...behaviours, { id, label, category: 'Personalizado' }]))
-    setValues((current) => ({ ...current, [id]: false }))
-    setNewBehaviour('')
   }
 
   function saveDiary() {
@@ -1626,10 +1589,6 @@ function DiaryView({ diary, setDiary, behaviours, setBehaviours, syncCloudSnapsh
         <small>{note.length}/300</small>
       </div>
 
-      <div className="add-row">
-        <input value={newBehaviour} onChange={(e) => setNewBehaviour(e.target.value)} placeholder="Adicionar comportamento" />
-        <button onClick={addBehaviour}><Plus size={18} /></button>
-      </div>
 
       <button className="primary-action" onClick={saveDiary}><Save size={18} /> Guardar Diário</button>
     </section>
