@@ -108,7 +108,7 @@ export const defaultBehaviours = [
   { id: 'ovos', label: 'Ovos', category: 'Proteína' },
   { id: 'claras', label: 'Claras', category: 'Proteína' },
   { id: 'laticinios', label: 'Lacticinios', category: 'Laticínios' },
-  { id: 'iogurte_normal', label: 'Iogurte Normal', category: 'Laticínios' },
+  { id: 'iogurte_normal', label: 'iogurte Normal', category: 'Laticínios' },
   { id: 'iogurte_vegan', label: 'Iogurte Vegan', category: 'Laticínios' },
   { id: 'leguminosas', label: 'Leguminosas', category: 'Vegetais e Leguminosas' },
   { id: 'frutos_secos_sementes', label: 'Frutos Secos ou Sementes', category: 'Snacks' },
@@ -133,7 +133,7 @@ export const defaultBehaviours = [
   { id: 'leite', label: 'Leite', category: 'Laticínios' },
   { id: 'alcool', label: 'Alcool', category: 'Bebidas' },
   { id: 'esquecimento_medicacao', label: 'Esquecimento da Medicação', category: 'Medicação' },
-  { id: 'sessao_dialise_6h30m', label: 'Sessão Diálise 6h30m', category: 'Diálise' },
-  { id: 'sessao_dialise_4h', label: 'Sessão Diálise 4h', category: 'Diálise' },
+  { id: 'sessao_dialise_6h30m', label: 'Sessão de Diálise 6h30m', category: 'Diálise' },
+  { id: 'sessao_dialise_4h', label: 'Sessão de Diálise 4h', category: 'Diálise' },
   { id: 'atividade_fisica', label: 'Atividade Fisica', category: 'Atividade' }
 ]
