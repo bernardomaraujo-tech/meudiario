@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+14:49 05/06/2026import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   BookOpenCheck,
@@ -31,7 +31,7 @@ const STORAGE = {
   localResetVersion: 'ads_local_reset_version_v1'
 }
 
-const CLOUD_DATA_VERSION = '2026-06-05-comportamentos-diario-v3'
+const CLOUD_DATA_VERSION = '2026-06-05-comportamentos-diario-v4-lista-final'
 
 const LOCAL_KEYS_TO_FORGET = [
   'ads_refs_v2',
@@ -331,11 +331,50 @@ function withDefaultReferences(value) {
 
 const legacyBehaviourIdMap = {
   batata: 'batata_tomate_espinafres',
+  batata_tomate_espinafre: 'batata_tomate_espinafres',
   comida_processada: 'enchidos_carne_processada',
+  carne_processada: 'enchidos_carne_processada',
   enchidos_fumados: 'enchidos_carne_processada',
+  enchidos_ou_carne_processada: 'enchidos_carne_processada',
   fast_food: 'refeicao_fora_fast_food',
+  refeicao_fora_ou_fast_food: 'refeicao_fora_fast_food',
   croissant_pastelaria: 'doces_pastelaria',
-  frutos_secos: 'frutos_secos_sementes'
+  doces_ou_pastelaria: 'doces_pastelaria',
+  frutos_secos: 'frutos_secos_sementes',
+  frutos_secos_ou_sementes: 'frutos_secos_sementes',
+  liquidos_acima_do_limite: 'liquidos_acima_limite',
+  laticinios: 'laticinios',
+  lacticinios: 'laticinios',
+  refrigerante_tipo_cola: 'refrigerante_cola',
+  quelante_de_fosforo_a_refeicao: 'quelante_fosforo',
+  arroz_ou_massa: 'arroz_massa',
+  salgados: 'refeicao_salgada',
+  sessao_de_dialise_4h: 'sessao_dialise_4h',
+  sessao_de_dialise_6h30m: 'sessao_dialise_6h30m',
+  tratamento_4h: 'sessao_dialise_4h',
+  tratamento_6h30m: 'sessao_dialise_6h30m'
+}
+
+const legacyBehaviourLabelMap = {
+  'batata tomate espinafre': 'batata_tomate_espinafres',
+  'batata tomate espinafres': 'batata_tomate_espinafres',
+  'enchidos ou carne processada': 'enchidos_carne_processada',
+  'refrigerante tipo cola': 'refrigerante_cola',
+  'doces ou pastelaria': 'doces_pastelaria',
+  'frutos secos ou sementes': 'frutos_secos_sementes',
+  'liquidos acima do limite': 'liquidos_acima_limite',
+  'liquidos acima limite': 'liquidos_acima_limite',
+  'laticinios': 'laticinios',
+  'lacticinios': 'laticinios',
+  'quelante de fosforo a refeicao': 'quelante_fosforo',
+  'arroz ou massa': 'arroz_massa',
+  'salgados': 'refeicao_salgada',
+  'sessao dialise 4h': 'sessao_dialise_4h',
+  'sessao de dialise 4h': 'sessao_dialise_4h',
+  'sessao dialise 6h30m': 'sessao_dialise_6h30m',
+  'sessao de dialise 6h30m': 'sessao_dialise_6h30m',
+  'atividade fisica': 'atividade_fisica',
+  'alcool': 'alcool'
 }
 
 const deprecatedBehaviourIds = new Set([
@@ -350,39 +389,22 @@ const deprecatedBehaviourIds = new Set([
   'tratamento_a_noite',
   'tratamento_a_tarde',
   'tratamento_noite',
-  'tratamento_tarde',
-  'alcool',
-  'atividade_fisica',
-  'banana',
-  'esquecimento_medicacao',
-  'legumes_cozidos',
-  'leite',
-  'queijo',
-  'sessao_dialise_4h',
-  'sessao_dialise_6h30m',
-  'sopa'
+  'tratamento_tarde'
 ])
 
 const deprecatedBehaviourLabels = new Set([
+  'bolo caseiro',
+  'bolo fabrico',
+  'fruta',
+  'iogurte proteina',
+  'comida processada',
+  'fast food',
+  'croissant pastelaria',
+  'dialise',
   'tratamento à noite',
   'tratamento a noite',
   'tratamento à tarde',
-  'tratamento a tarde',
-  'álcool',
-  'alcool',
-  'atividade física',
-  'atividade fisica',
-  'banana',
-  'esquecimento da medicação',
-  'esquecimento da medicacao',
-  'legumes cozidos',
-  'leite',
-  'queijo',
-  'sessão de diálise 4h',
-  'sessao de dialise 4h',
-  'sessão de diálise 6h30m',
-  'sessao de dialise 6h30m',
-  'sopa'
+  'tratamento a tarde'
 ])
 
 function normalizeTextKey(value) {
@@ -390,18 +412,29 @@ function normalizeTextKey(value) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
 }
 
 function sortBehavioursByLabel(value) {
   if (!Array.isArray(value)) return []
 
-  return [...value].sort((a, b) =>
-    String(a?.label || '').localeCompare(String(b?.label || ''), 'pt-PT', {
+  const defaultOrder = new Map(defaultBehaviours.map((item, index) => [item.id, index]))
+
+  return [...value].sort((a, b) => {
+    const aId = legacyBehaviourIdMap[a?.id] || legacyBehaviourLabelMap[normalizeTextKey(a?.label)] || a?.id
+    const bId = legacyBehaviourIdMap[b?.id] || legacyBehaviourLabelMap[normalizeTextKey(b?.label)] || b?.id
+    const aOrder = defaultOrder.has(aId) ? defaultOrder.get(aId) : Number.MAX_SAFE_INTEGER
+    const bOrder = defaultOrder.has(bId) ? defaultOrder.get(bId) : Number.MAX_SAFE_INTEGER
+
+    if (aOrder !== bOrder) return aOrder - bOrder
+
+    return String(a?.label || '').localeCompare(String(b?.label || ''), 'pt-PT', {
       sensitivity: 'base',
       numeric: true
     })
-  )
+  })
 }
 
 function normalizeDiaryBehaviours(value) {
@@ -417,7 +450,7 @@ function normalizeDiaryBehaviours(value) {
       return
     }
 
-    const mappedId = legacyBehaviourIdMap[item.behaviourId] || item.behaviourId
+    const mappedId = legacyBehaviourIdMap[item.behaviourId] || legacyBehaviourLabelMap[normalizeTextKey(item.label)] || item.behaviourId
 
     if (deprecatedBehaviourIds.has(item.behaviourId) || deprecatedBehaviourIds.has(mappedId)) return
     if (deprecatedBehaviourLabels.has(normalizeTextKey(item.label))) return
@@ -452,7 +485,10 @@ function withDefaultBehaviours(value) {
   const existingById = new Map(
     value
       .filter((item) => item && typeof item === 'object' && item.id)
-      .map((item) => [legacyBehaviourIdMap[item.id] || item.id, item])
+      .map((item) => {
+        const normalizedLabel = normalizeTextKey(item.label)
+        return [legacyBehaviourIdMap[item.id] || legacyBehaviourLabelMap[normalizedLabel] || item.id, item]
+      })
   )
 
   const defaultIds = new Set(defaultBehaviours.map((item) => item.id))
@@ -467,8 +503,8 @@ function withDefaultBehaviours(value) {
   value.forEach((item) => {
     if (!item || typeof item !== 'object' || !item.id) return
 
-    const normalizedId = legacyBehaviourIdMap[item.id] || item.id
     const normalizedLabel = normalizeTextKey(item.label)
+    const normalizedId = legacyBehaviourIdMap[item.id] || legacyBehaviourLabelMap[normalizedLabel] || item.id
 
     if (defaultIds.has(normalizedId)) return
     if (defaultLabels.has(normalizedLabel)) return
@@ -496,8 +532,9 @@ function listKeyDiary(item) {
 
 function listKeyBehaviour(item) {
   if (!item || typeof item !== 'object') return ''
-  const normalizedId = legacyBehaviourIdMap[item.id] || item.id
-  return normalizedId || normalizeTextKey(item.label) || ''
+  const normalizedLabel = normalizeTextKey(item.label)
+  const normalizedId = legacyBehaviourIdMap[item.id] || legacyBehaviourLabelMap[normalizedLabel] || item.id
+  return normalizedId || normalizedLabel || ''
 }
 
 function mergeListByKey(cloudList, localList, makeKey) {
