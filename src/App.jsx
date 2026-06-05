@@ -31,10 +31,11 @@ const STORAGE = {
   localResetVersion: 'ads_local_reset_version_v1'
 }
 
-const CLOUD_DATA_VERSION = '2026-06-03-comportamentos-diario-v1'
+const CLOUD_DATA_VERSION = '2026-06-05-comportamentos-diario-v3'
 
 const LOCAL_KEYS_TO_FORGET = [
-  'ads_refs_v2'
+  'ads_refs_v2',
+  'ads_behaviours_v3'
 ]
 
 function forgetOldLocalDataIfNeeded() {
@@ -329,9 +330,12 @@ function withDefaultReferences(value) {
 }
 
 const legacyBehaviourIdMap = {
-  comida_processada: 'enchidos_fumados',
+  batata: 'batata_tomate_espinafres',
+  comida_processada: 'enchidos_carne_processada',
+  enchidos_fumados: 'enchidos_carne_processada',
   fast_food: 'refeicao_fora_fast_food',
-  croissant_pastelaria: 'doces_pastelaria'
+  croissant_pastelaria: 'doces_pastelaria',
+  frutos_secos: 'frutos_secos_sementes'
 }
 
 const deprecatedBehaviourIds = new Set([
@@ -346,14 +350,39 @@ const deprecatedBehaviourIds = new Set([
   'tratamento_a_noite',
   'tratamento_a_tarde',
   'tratamento_noite',
-  'tratamento_tarde'
+  'tratamento_tarde',
+  'alcool',
+  'atividade_fisica',
+  'banana',
+  'esquecimento_medicacao',
+  'legumes_cozidos',
+  'leite',
+  'queijo',
+  'sessao_dialise_4h',
+  'sessao_dialise_6h30m',
+  'sopa'
 ])
 
 const deprecatedBehaviourLabels = new Set([
   'tratamento à noite',
   'tratamento a noite',
   'tratamento à tarde',
-  'tratamento a tarde'
+  'tratamento a tarde',
+  'álcool',
+  'alcool',
+  'atividade física',
+  'atividade fisica',
+  'banana',
+  'esquecimento da medicação',
+  'esquecimento da medicacao',
+  'legumes cozidos',
+  'leite',
+  'queijo',
+  'sessão de diálise 4h',
+  'sessao de dialise 4h',
+  'sessão de diálise 6h30m',
+  'sessao de dialise 6h30m',
+  'sopa'
 ])
 
 function normalizeTextKey(value) {
@@ -427,24 +456,32 @@ function withDefaultBehaviours(value) {
   )
 
   const defaultIds = new Set(defaultBehaviours.map((item) => item.id))
+  const defaultLabels = new Set(defaultBehaviours.map((item) => normalizeTextKey(item.label)))
+  const customByLabel = new Map()
+
   const normalizedDefaults = defaultBehaviours.map((item) => ({
     ...(existingById.get(item.id) || {}),
     ...item
   }))
 
-  const customBehaviours = value.filter((item) => {
-    if (!item || typeof item !== 'object' || !item.id) return false
+  value.forEach((item) => {
+    if (!item || typeof item !== 'object' || !item.id) return
 
     const normalizedId = legacyBehaviourIdMap[item.id] || item.id
+    const normalizedLabel = normalizeTextKey(item.label)
 
-    if (defaultIds.has(normalizedId)) return false
-    if (deprecatedBehaviourIds.has(item.id) || deprecatedBehaviourIds.has(normalizedId)) return false
-    if (deprecatedBehaviourLabels.has(normalizeTextKey(item.label))) return false
+    if (defaultIds.has(normalizedId)) return
+    if (defaultLabels.has(normalizedLabel)) return
+    if (deprecatedBehaviourIds.has(item.id) || deprecatedBehaviourIds.has(normalizedId)) return
+    if (deprecatedBehaviourLabels.has(normalizedLabel)) return
 
-    return true
+    customByLabel.set(normalizedLabel || normalizedId, {
+      ...item,
+      id: normalizedId
+    })
   })
 
-  return sortBehavioursByLabel([...normalizedDefaults, ...customBehaviours])
+  return sortBehavioursByLabel([...normalizedDefaults, ...customByLabel.values()])
 }
 
 function listKeyExam(item) {
@@ -459,7 +496,8 @@ function listKeyDiary(item) {
 
 function listKeyBehaviour(item) {
   if (!item || typeof item !== 'object') return ''
-  return item.id || item.label || ''
+  const normalizedId = legacyBehaviourIdMap[item.id] || item.id
+  return normalizedId || normalizeTextKey(item.label) || ''
 }
 
 function mergeListByKey(cloudList, localList, makeKey) {
