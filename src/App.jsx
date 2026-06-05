@@ -31,7 +31,7 @@ const STORAGE = {
   localResetVersion: 'ads_local_reset_version_v1'
 }
 
-const CLOUD_DATA_VERSION = '2026-06-05-comportamentos-diario-v7-lista-fechada-sem-duplicados'
+const CLOUD_DATA_VERSION = '2026-06-05-comportamentos-diario-v8-lista-alfabetica'
 
 const LOCAL_KEYS_TO_FORGET = [
   'ads_refs_v2',
@@ -426,19 +426,11 @@ function normalizeTextKey(value) {
 function sortBehavioursByLabel(value) {
   if (!Array.isArray(value)) return []
 
-  const defaultOrder = new Map(defaultBehaviours.map((item, index) => [item.id, index]))
-
   return [...value].sort((a, b) => {
-    const aId = legacyBehaviourIdMap[a?.id] || legacyBehaviourLabelMap[normalizeTextKey(a?.label)] || a?.id
-    const bId = legacyBehaviourIdMap[b?.id] || legacyBehaviourLabelMap[normalizeTextKey(b?.label)] || b?.id
-    const aOrder = defaultOrder.has(aId) ? defaultOrder.get(aId) : Number.MAX_SAFE_INTEGER
-    const bOrder = defaultOrder.has(bId) ? defaultOrder.get(bId) : Number.MAX_SAFE_INTEGER
-
-    if (aOrder !== bOrder) return aOrder - bOrder
-
     return String(a?.label || '').localeCompare(String(b?.label || ''), 'pt-PT', {
       sensitivity: 'base',
-      numeric: true
+      numeric: true,
+      ignorePunctuation: true
     })
   })
 }
@@ -491,6 +483,7 @@ function normalizeDiaryBehaviours(value) {
 
 function withDefaultBehaviours() {
   // A lista de comportamentos passa a ser fechada: nem mais, nem menos.
+  // A apresentação é sempre ordenada alfabeticamente pelo label.
   // Isto impede que comportamentos antigos guardados em localStorage ou na cloud voltem a aparecer.
   return sortBehavioursByLabel(defaultBehaviours.map((item) => ({ ...item })))
 }
