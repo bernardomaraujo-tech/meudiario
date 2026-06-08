@@ -13,6 +13,10 @@ import {
   LineChart,
   MoreHorizontal,
   Plus,
+  FileText,
+  TrendingUp,
+  TrendingDown,
+  Minus,
   Save,
   Search,
   ShieldCheck,
@@ -141,32 +145,34 @@ function getStatus(value, ref) {
   const idealMin = parseNum(ref?.idealMin)
   const idealMax = parseNum(ref?.idealMax)
 
-  // Para biomarcadores onde quanto mais baixo melhor.
-  // Aceita o limite tanto em refMax como em refMin, para compatibilidade com o ficheiro atual.
   if (direction === 'lower') {
-    const limit = idealMax ?? refMax ?? idealMin ?? refMin
+    const idealLimit = idealMax ?? idealMin
+    const sufficientLimit = refMax ?? refMin
 
-    if (limit === null) return 'unknown'
+    if (idealLimit !== null && n <= idealLimit) return 'ideal'
+    if (sufficientLimit !== null && n <= sufficientLimit) return idealLimit !== null ? 'sufficient' : 'ideal'
+    if (idealLimit !== null || sufficientLimit !== null) return 'out'
 
-    return ref?.exclusiveMax ? (n < limit ? 'ideal' : 'out') : (n <= limit ? 'ideal' : 'out')
+    return 'unknown'
   }
 
-  // Para biomarcadores onde quanto mais alto melhor.
-  // Aceita o limite tanto em refMin como em refMax, para compatibilidade com o ficheiro atual.
   if (direction === 'higher') {
-    const limit = idealMin ?? refMin ?? idealMax ?? refMax
+    const idealLimit = idealMin ?? idealMax
+    const sufficientLimit = refMin ?? refMax
 
-    if (limit === null) return 'unknown'
+    if (idealLimit !== null && n >= idealLimit) return 'ideal'
+    if (sufficientLimit !== null && n >= sufficientLimit) return idealLimit !== null ? 'sufficient' : 'ideal'
+    if (idealLimit !== null || sufficientLimit !== null) return 'out'
 
-    return n >= limit ? 'ideal' : 'out'
+    return 'unknown'
   }
 
-  // Para biomarcadores com intervalo normal.
   const hasIdeal = idealMin !== null || idealMax !== null
   const hasReference = refMin !== null || refMax !== null
 
-  if (hasIdeal) return inRange(n, ref.idealMin, ref.idealMax) ? 'ideal' : 'out'
-  if (hasReference) return inRange(n, ref.sufficientMin, ref.sufficientMax) ? 'ideal' : 'out'
+  if (hasIdeal && inRange(n, ref.idealMin, ref.idealMax)) return 'ideal'
+  if (hasReference && inRange(n, ref.sufficientMin, ref.sufficientMax)) return hasIdeal ? 'sufficient' : 'ideal'
+  if (hasIdeal || hasReference) return 'out'
 
   return 'unknown'
 }
@@ -174,7 +180,7 @@ function getStatus(value, ref) {
 function statusLabel(status) {
   return {
     ideal: 'Ideal',
-    sufficient: 'Ideal',
+    sufficient: 'Suficiente',
     out: 'Fora do intervalo',
     unknown: 'Sem referência',
     empty: 'Sem valor'
@@ -183,7 +189,7 @@ function statusLabel(status) {
 
 function statusIcon(status) {
   if (status === 'ideal') return '✓'
-  if (status === 'sufficient') return '✓'
+  if (status === 'sufficient') return '≈'
   if (status === 'out') return '!'
   return '—'
 }
@@ -251,6 +257,7 @@ function titleForTab(tab, selectedBiomarkerId) {
   return {
     insert: 'Nova Análise',
     analysis: 'Resumo da Última Análise',
+    report: 'Relatório da Última Análise',
     history: 'Histórico de Análises',
     diary: 'Diário Alimentar',
     impact: 'Impacto dos Comportamentos',
@@ -330,7 +337,6 @@ function normalizeReferenceForBiomarker(id, ref = {}) {
 
     normalized.sufficientMin = ''
     normalized.direction = 'lower'
-    normalized.exclusiveMax = true
   }
 
   return normalized
@@ -611,6 +617,190 @@ function latestBiomarkerCards(exam, refs, allowedStatuses = ['out', 'ideal', 'su
     .filter((card) => allowedStatuses.includes(card.status))
 }
 
+const REPORT_PRIORITY = [
+  'ureia_pos_dialise',
+  'ureia_pre_dialise',
+  'fosforo_inorganico',
+  'potassio',
+  'albumina',
+  'hemoglobina',
+  'hematocrito',
+  'ferritina',
+  'paratormona_pth',
+  'calcio_total',
+  'sodio',
+  'proteina_c_reactiva'
+]
+
+function monthsWindowDays(months) {
+  return months * 30
+}
+
+function formatNumber(value) {
+  const n = parseNum(value)
+
+  if (n === null) return '—'
+
+  return Number.isInteger(n)
+    ? String(n)
+    : n.toFixed(1).replace('.', ',')
+}
+
+function formatRef(refConfig) {
+  const min = parseNum(refConfig?.idealMin) ?? parseNum(refConfig?.sufficientMin)
+  const max = parseNum(refConfig?.idealMax) ?? parseNum(refConfig?.sufficientMax)
+  const direction = refConfig?.direction || 'range'
+
+  if (direction === 'lower' && max !== null) return `< ${formatNumber(max)}`
+  if (direction === 'lower' && min !== null) return `< ${formatNumber(min)}`
+  if (direction === 'higher' && min !== null) return `> ${formatNumber(min)}`
+  if (direction === 'higher' && max !== null) return `> ${formatNumber(max)}`
+  if (min !== null && max !== null) return `${formatNumber(min)} - ${formatNumber(max)}`
+  if (min !== null) return `> ${formatNumber(min)}`
+  if (max !== null) return `< ${formatNumber(max)}`
+
+  return 'Sem ref.'
+}
+
+function averageForBiomarker(exams, biomarkerId, latestDate, months) {
+  const days = monthsWindowDays(months)
+
+  const values = exams
+    .filter((exam) => {
+      if (!exam?.date) return false
+
+      const diff = daysBetween(latestDate, exam.date)
+
+      return diff >= 0 && diff <= days
+    })
+    .map((exam) => parseNum(exam.values?.[biomarkerId]))
+    .filter((value) => value !== null)
+
+  return average(values)
+}
+
+function seriesForBiomarker(exams, biomarkerId, latestDate, months = 6) {
+  const days = monthsWindowDays(months)
+
+  return [...exams]
+    .filter((exam) => {
+      if (!exam?.date) return false
+
+      const diff = daysBetween(latestDate, exam.date)
+
+      return diff >= 0 && diff <= days && parseNum(exam.values?.[biomarkerId]) !== null
+    })
+    .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))
+    .map((exam) => ({
+      date: exam.date,
+      value: parseNum(exam.values?.[biomarkerId])
+    }))
+}
+
+function trendForValue(current, avg3m, refConfig) {
+  const value = parseNum(current)
+
+  if (value === null || avg3m === null) {
+    return {
+      direction: 'flat',
+      tone: 'neutral',
+      label: 'Sem dados'
+    }
+  }
+
+  const diff = value - avg3m
+  const absDiff = Math.abs(diff)
+
+  if (absDiff < 0.01) {
+    return {
+      direction: 'flat',
+      tone: 'neutral',
+      label: 'Estável'
+    }
+  }
+
+  const improvementDirection = refConfig?.direction || 'range'
+
+  if (improvementDirection === 'lower') {
+    return diff < 0
+      ? { direction: 'down', tone: 'good', label: 'Melhorou' }
+      : { direction: 'up', tone: 'watch', label: 'Subiu' }
+  }
+
+  if (improvementDirection === 'higher') {
+    return diff > 0
+      ? { direction: 'up', tone: 'good', label: 'Melhorou' }
+      : { direction: 'down', tone: 'watch', label: 'Desceu' }
+  }
+
+  return diff > 0
+    ? { direction: 'up', tone: 'neutral', label: 'Subiu' }
+    : { direction: 'down', tone: 'neutral', label: 'Desceu' }
+}
+
+function buildReportRows(exam, exams, refs) {
+  if (!exam) return []
+
+  return Object.entries(exam.values || {})
+    .map(([id, value]) => {
+      const biomarker = biomarkers.find((item) => item.id === id) || {
+        id,
+        name: id.replaceAll('_', ' '),
+        unit: '',
+        category: 'Não mapeado',
+        direction: 'range'
+      }
+
+      const refConfig = getReferenceConfig(id, refs)
+      const status = getStatus(value, refConfig)
+      const avg3m = averageForBiomarker(exams, id, exam.date, 3)
+      const avg6m = averageForBiomarker(exams, id, exam.date, 6)
+      const series = seriesForBiomarker(exams, id, exam.date, 6)
+      const trend = trendForValue(value, avg3m, refConfig)
+
+      return {
+        id,
+        biomarker,
+        value,
+        refConfig,
+        status,
+        avg3m,
+        avg6m,
+        trend,
+        series
+      }
+    })
+    .sort((a, b) => {
+      const priorityA = REPORT_PRIORITY.indexOf(a.id)
+      const priorityB = REPORT_PRIORITY.indexOf(b.id)
+
+      const aIndex = priorityA === -1 ? 999 : priorityA
+      const bIndex = priorityB === -1 ? 999 : priorityB
+
+      return aIndex - bIndex || a.biomarker.name.localeCompare(b.biomarker.name, 'pt-PT')
+    })
+}
+
+function reportInsightRows(rows) {
+  const outRows = rows.filter((row) => row.status === 'out')
+  const improvingRows = rows.filter((row) => row.trend.tone === 'good')
+  const stableRows = rows.filter((row) => row.trend.label === 'Estável')
+
+  if (outRows.length) {
+    return outRows.slice(0, 3).map((row) => `${row.biomarker.name}: fora da referência, com tendência "${row.trend.label.toLowerCase()}".`)
+  }
+
+  if (improvingRows.length) {
+    return improvingRows.slice(0, 3).map((row) => `${row.biomarker.name}: evolução favorável face à média dos últimos 3 meses.`)
+  }
+
+  if (stableRows.length) {
+    return stableRows.slice(0, 3).map((row) => `${row.biomarker.name}: comportamento estável face à média recente.`)
+  }
+
+  return ['Sem alertas principais com os dados disponíveis.']
+}
+
 function App() {
   const [tab, setTab] = useState('analysis')
   const [exams, setExams] = useState(() => loadJson(STORAGE.exams, []))
@@ -834,8 +1024,23 @@ function App() {
         {tab === 'analysis' && !selectedBiomarkerId && (
           <AnalysisView
             exam={selectedExam}
+            exams={exams}
             refs={refs}
             onSelect={setSelectedBiomarkerId}
+            onOpenReport={() => setTab('report')}
+          />
+        )}
+
+        {tab === 'report' && (
+          <ReportView
+            exam={selectedExam}
+            exams={exams}
+            refs={refs}
+            onBack={() => setTab('analysis')}
+            onSelect={(id) => {
+              setSelectedBiomarkerId(id)
+              setTab('analysis')
+            }}
           />
         )}
 
@@ -1077,7 +1282,7 @@ function ReferenceEditor({ refs, setRefs }) {
   )
 }
 
-function AnalysisView({ exam, refs, onSelect }) {
+function AnalysisView({ exam, exams, refs, onSelect, onOpenReport }) {
   const [query, setQuery] = useState('')
   const latestValues = exam?.values || {}
 
@@ -1126,6 +1331,16 @@ function AnalysisView({ exam, refs, onSelect }) {
         {exam.name || 'Análise'} · {formatDate(exam.date)}{exam.time ? ` · ${exam.time}` : ''}
       </div>
 
+      <button className="report-entry-card" onClick={onOpenReport}>
+        <div>
+          <span>Relatório clínico</span>
+          <strong>Comparar com 3 meses e 6 meses</strong>
+          <small>Ver tendências, médias e alertas da última análise.</small>
+        </div>
+
+        <FileText size={24} />
+      </button>
+
       <div className="status-grid">
         <StatusCard label="Fora do intervalo" count={grouped.out.length} status="out" />
         <StatusCard label="Ideal" count={grouped.ideal.length} status="ideal" />
@@ -1155,6 +1370,161 @@ function AnalysisView({ exam, refs, onSelect }) {
         <EmptyState title="Sem resultados" text="Não existem biomarcadores com esse filtro." compact />
       )}
     </section>
+  )
+}
+
+function ReportView({ exam, exams, refs, onBack, onSelect }) {
+  const rows = useMemo(() => buildReportRows(exam, exams, refs), [exam, exams, refs])
+
+  if (!exam) {
+    return <EmptyState title="Sem análise" text="Ainda não existe uma análise para gerar relatório." />
+  }
+
+  const grouped = {
+    ideal: rows.filter((row) => row.status === 'ideal').length,
+    sufficient: rows.filter((row) => row.status === 'sufficient').length,
+    out: rows.filter((row) => row.status === 'out').length,
+    unknown: rows.filter((row) => row.status === 'unknown' || row.status === 'empty').length
+  }
+
+  const highlights = rows.slice(0, 6)
+  const chartRows = rows.filter((row) => row.series.length >= 2).slice(0, 4)
+  const insightRows = reportInsightRows(rows)
+
+  return (
+    <section className="screen report-screen">
+      <button className="back-button" onClick={onBack}>‹ Voltar ao resumo</button>
+
+      <div className="report-hero">
+        <div>
+          <p className="eyebrow">Relatório de análises</p>
+          <h2>Última análise</h2>
+          <span>{exam.name || 'Análise'} · {formatDate(exam.date)}{exam.time ? ` · ${exam.time}` : ''}</span>
+        </div>
+
+        <button className="secondary-action print-button" onClick={() => window.print()}>
+          <FileText size={18} /> Exportar / imprimir
+        </button>
+      </div>
+
+      <div className="report-kpi-grid">
+        <ReportKpi label="Indicadores" value={rows.length} tone="blue" />
+        <ReportKpi label="Ideal" value={grouped.ideal} tone="green" />
+        <ReportKpi label="Suficiente" value={grouped.sufficient} tone="orange" />
+        <ReportKpi label="Fora" value={grouped.out} tone="red" />
+      </div>
+
+      <div className="section-header">
+        <h3>Destaques</h3>
+      </div>
+
+      <div className="report-highlight-grid">
+        {highlights.map((row) => (
+          <button className="report-highlight-card" key={row.id} onClick={() => onSelect?.(row.id)}>
+            <span>{row.biomarker.name}</span>
+            <strong>{formatNumber(row.value)} <small>{row.biomarker.unit}</small></strong>
+            <em>Ref. {formatRef(row.refConfig)}</em>
+            <b className={classNameForStatus(row.status)}>{statusLabel(row.status)}</b>
+          </button>
+        ))}
+      </div>
+
+      <div className="report-reading-card">
+        <strong>Leitura rápida</strong>
+        <ul>
+          {insightRows.map((text) => (
+            <li key={text}>{text}</li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="section-header">
+        <h3>Comparação 3M / 6M</h3>
+      </div>
+
+      <div className="report-table-card">
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Biomarcador</th>
+              <th>Última</th>
+              <th>Ref.</th>
+              <th>Média 3M</th>
+              <th>Média 6M</th>
+              <th>Estado</th>
+              <th>Tendência</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>{row.biomarker.name}</td>
+                <td>{formatNumber(row.value)} {row.biomarker.unit}</td>
+                <td>{formatRef(row.refConfig)}</td>
+                <td>{formatNumber(row.avg3m)}</td>
+                <td>{formatNumber(row.avg6m)}</td>
+                <td><span className={classNameForStatus(row.status)}>{statusLabel(row.status)}</span></td>
+                <td><TrendIcon trend={row.trend} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="section-header">
+        <h3>Evolução dos últimos 6 meses</h3>
+      </div>
+
+      {chartRows.length > 0 ? (
+        <div className="report-chart-grid">
+          {chartRows.map((row) => (
+            <div className="report-chart-card" key={row.id}>
+              <strong>{row.biomarker.name}</strong>
+              <TrendChart series={row.series} refConfig={row.refConfig} unit={row.biomarker.unit} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="Dados insuficientes" text="São necessárias pelo menos duas análises por biomarcador para mostrar gráficos de evolução." compact />
+      )}
+    </section>
+  )
+}
+
+function ReportKpi({ label, value, tone }) {
+  return (
+    <div className={`report-kpi ${tone}`}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function TrendIcon({ trend }) {
+  if (trend.direction === 'up') {
+    return (
+      <span className={`trend-icon ${trend.tone}`}>
+        <TrendingUp size={16} />
+        {trend.label}
+      </span>
+    )
+  }
+
+  if (trend.direction === 'down') {
+    return (
+      <span className={`trend-icon ${trend.tone}`}>
+        <TrendingDown size={16} />
+        {trend.label}
+      </span>
+    )
+  }
+
+  return (
+    <span className="trend-icon neutral">
+      <Minus size={16} />
+      {trend.label}
+    </span>
   )
 }
 
