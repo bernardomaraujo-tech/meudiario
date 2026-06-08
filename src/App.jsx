@@ -148,7 +148,7 @@ function getStatus(value, ref) {
 
     if (limit === null) return 'unknown'
 
-    return n <= limit ? 'ideal' : 'out'
+    return ref?.exclusiveMax ? (n < limit ? 'ideal' : 'out') : (n <= limit ? 'ideal' : 'out')
   }
 
   // Para biomarcadores onde quanto mais alto melhor.
@@ -317,8 +317,27 @@ function mergeReference(defaultRef = {}, cloudRef = {}) {
   return merged
 }
 
+function normalizeReferenceForBiomarker(id, ref = {}) {
+  const normalized = { ...(ref || {}) }
+
+  if (id === 'ureia_pos_dialise') {
+    const hasMax = validReferenceNumber(normalized.sufficientMax)
+    const legacyMin = normalized.sufficientMin
+
+    if (!hasMax && validReferenceNumber(legacyMin)) {
+      normalized.sufficientMax = legacyMin
+    }
+
+    normalized.sufficientMin = ''
+    normalized.direction = 'lower'
+    normalized.exclusiveMax = true
+  }
+
+  return normalized
+}
+
 function getReferenceConfig(id, refs = {}) {
-  return mergeReference(defaultReferences[id], refs?.[id])
+  return normalizeReferenceForBiomarker(id, mergeReference(defaultReferences[id], refs?.[id]))
 }
 
 function withDefaultReferences(value) {
@@ -327,7 +346,7 @@ function withDefaultReferences(value) {
   const mergedRefs = {}
 
   ids.forEach((id) => {
-    mergedRefs[id] = mergeReference(defaultReferences[id], cloudRefs[id])
+    mergedRefs[id] = normalizeReferenceForBiomarker(id, mergeReference(defaultReferences[id], cloudRefs[id]))
   })
 
   return mergedRefs
@@ -527,7 +546,7 @@ function normalizeReferenceMap(refsInput) {
   const normalized = {}
 
   Object.entries(refs).forEach(([id, ref]) => {
-    normalized[id] = mergeReference(defaultReferences[id], ref)
+    normalized[id] = normalizeReferenceForBiomarker(id, mergeReference(defaultReferences[id], ref))
   })
 
   return normalized
