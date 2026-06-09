@@ -327,7 +327,7 @@ function mergeReference(defaultRef = {}, cloudRef = {}) {
 function normalizeReferenceForBiomarker(id, ref = {}) {
   const normalized = { ...(ref || {}) }
 
-  if (id === 'ureia_pos_dialise') {
+  if (id === 'ureia_pre_dialise' || id === 'ureia_pos_dialise') {
     const hasMax = validReferenceNumber(normalized.sufficientMax)
     const legacyMin = normalized.sufficientMin
 
@@ -337,6 +337,7 @@ function normalizeReferenceForBiomarker(id, ref = {}) {
 
     normalized.sufficientMin = ''
     normalized.direction = 'lower'
+    normalized.exclusiveMax = true
   }
 
   return normalized
