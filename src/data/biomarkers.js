@@ -75,7 +75,7 @@ export const defaultReferences = {
   sideremia: { sufficientMin: '65', sufficientMax: '175', idealMin: '', idealMax: '', direction: 'range' },
   proteina_c_reactiva: { sufficientMin: '0.05', sufficientMax: '1', idealMin: '', idealMax: '', direction: 'range' },
   ureia_pre_dialise: { sufficientMin: '50', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
-  ureia_pos_dialise: { sufficientMin: '', sufficientMax: '50', idealMin: '', idealMax: '', direction: 'lower', exclusiveMax: true },
+  ureia_pos_dialise: { sufficientMin: '50', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
   albumina: { sufficientMin: '3.3', sufficientMax: '5', idealMin: '', idealMax: '', direction: 'range' },
   creatininemia: { sufficientMin: '0.7', sufficientMax: '1.3', idealMin: '', idealMax: '', direction: 'range' },
   proteinas_totais: { sufficientMin: '5.7', sufficientMax: '8.2', idealMin: '', idealMax: '', direction: 'range' },
