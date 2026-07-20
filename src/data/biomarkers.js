@@ -95,7 +95,7 @@ export const defaultReferences = {
   glicemia_media_estimada: { sufficientMin: '5.7', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
   glicemia: { sufficientMin: '70', sufficientMax: '110', idealMin: '', idealMax: '', direction: 'range' },
   psa_total: { sufficientMin: '4', sufficientMax: '', idealMin: '', idealMax: '', direction: 'higher' },
-  paratormona_pth: { sufficientMin: '18', sufficientMax: '80', idealMin: '', idealMax: '', direction: 'range' },
+  paratormona_pth: { sufficientMin: '8', sufficientMax: '80', idealMin: '', idealMax: '', direction: 'range' },
 }
 
 export const defaultBehaviours = [
