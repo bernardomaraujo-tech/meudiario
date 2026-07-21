@@ -184,86 +184,40 @@ export async function pingCloud() {
   }
 }
 
-function postBehaviourAnalysisForm(data) {
-  return new Promise((resolve, reject) => {
-    const requestId = `behaviour_analysis_${Date.now()}_${Math.random().toString(36).slice(2)}`
-    const iframeName = `${requestId}_frame`
-    const iframe = document.createElement('iframe')
-    const form = document.createElement('form')
-    let finished = false
-
-    iframe.name = iframeName
-    iframe.style.display = 'none'
-
-    form.method = 'POST'
-    form.action = cleanUrl(CLOUD_API_URL)
-    form.target = iframeName
-    form.style.display = 'none'
-
-    const fields = {
-      action: 'createBehaviorAnalysisFrame',
-      token: CLOUD_TOKEN,
-      requestId,
-      payload: JSON.stringify({
-        action: 'createBehaviorAnalysisFrame',
-        token: CLOUD_TOKEN,
-        requestId,
-        data
-      })
-    }
-
-    Object.entries(fields).forEach(([name, value]) => {
-      const input = document.createElement('input')
-      input.type = 'hidden'
-      input.name = name
-      input.value = value
-      form.appendChild(input)
-    })
-
-    function cleanup() {
-      if (finished) return
-      finished = true
-      window.clearTimeout(timeout)
-      window.removeEventListener('message', onMessage)
-      if (form.parentNode) form.parentNode.removeChild(form)
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
-    }
-
-    function onMessage(event) {
-      if (event.source !== iframe.contentWindow) return
-
-      const message = event.data
-
-      if (!message || message.source !== 'meudiario-behaviour-analysis' || message.requestId !== requestId) return
-
-      cleanup()
-
-      if (message.payload?.ok === false) {
-        reject(new Error(message.payload.error || 'Erro ao criar a análise.'))
-        return
-      }
-
-      resolve(message.payload)
-    }
-
-    const timeout = window.setTimeout(() => {
-      cleanup()
-      reject(new Error('A análise demorou mais de 90 segundos. Tenta novamente.'))
-    }, 90000)
-
-    window.addEventListener('message', onMessage)
-    document.body.appendChild(iframe)
-    document.body.appendChild(form)
-    form.submit()
-  })
-}
-
 export async function createBehaviourAnalysis(data) {
   if (!isCloudConfigured()) {
     throw new Error('A ligação ao servidor de análise ainda não está configurada.')
   }
 
-  const payload = await postBehaviourAnalysisForm(data)
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 180000)
+  let payload
+
+  try {
+    const response = await fetch(cleanUrl(CLOUD_API_URL), {
+      method: 'POST',
+      redirect: 'follow',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify({
+        action: 'createBehaviorAnalysis',
+        token: CLOUD_TOKEN,
+        data
+      }),
+      signal: controller.signal
+    })
+
+    payload = await parseResponse(response)
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('A análise demorou mais de 3 minutos. Tenta novamente.')
+    }
+
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 
   if (!payload?.analysis || !Array.isArray(payload.analysis.biomarkers)) {
     throw new Error('O servidor não devolveu uma análise válida.')
