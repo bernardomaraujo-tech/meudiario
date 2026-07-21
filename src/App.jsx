@@ -1809,6 +1809,291 @@ function confidenceFromHistory(examCount) {
   return 'Baixa'
 }
 
+
+const PHOSPHORUS_RULES = {
+  hiddenPhosphates: [
+    'pao',
+    'bolachas',
+    'iogurte_vegan',
+    'doces_pastelaria',
+    'enchidos_carne_processada',
+    'refeicao_fora_fast_food',
+    'refrigerante_cola'
+  ],
+  directSources: [
+    'queijo',
+    'leite',
+    'iogurte_normal',
+    'laticinios',
+    'frutos_secos_sementes',
+    'leguminosas',
+    'carne_vermelha',
+    'carne_branca',
+    'peixe',
+    'marisco',
+    'ovos'
+  ],
+  potassium: [
+    'banana',
+    'batata_tomate_espinafres',
+    'fruta_rica_potassio',
+    'frutos_secos_sementes',
+    'leguminosas',
+    'laticinios',
+    'iogurte_normal',
+    'iogurte_vegan',
+    'leite'
+  ],
+  protein: ['peixe', 'carne_branca', 'carne_vermelha', 'marisco', 'ovos', 'claras'],
+  glycaemic: ['doces_pastelaria', 'bolachas', 'chocolate', 'pao', 'arroz_massa', 'refrigerante_cola'],
+  sodiumAndFluids: ['refeicao_salgada', 'enchidos_carne_processada', 'refeicao_fora_fast_food', 'liquidos_acima_limite']
+}
+
+function shiftIsoDate(dateText, deltaDays) {
+  const date = toDate(dateText)
+  date.setDate(date.getDate() + deltaDays)
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
+  return date.toISOString().slice(0, 10)
+}
+
+function trueDiaryRowsBetween(diary, startDate, endDate) {
+  return diary.filter((item) => {
+    return item?.date &&
+      item.behaviourId !== '__note__' &&
+      item.value === true &&
+      item.date > startDate &&
+      item.date <= endDate
+  })
+}
+
+function behaviourCountMap(rows) {
+  const counts = new Map()
+
+  rows.forEach((row) => {
+    counts.set(row.behaviourId, (counts.get(row.behaviourId) || 0) + 1)
+  })
+
+  return counts
+}
+
+function behaviourDays(rows, ids) {
+  const allowed = new Set(ids)
+  return new Set(rows.filter((row) => allowed.has(row.behaviourId)).map((row) => row.date)).size
+}
+
+function behaviourPeriodItems(rows, ids, behaviourMap, previousCounts = new Map()) {
+  const counts = behaviourCountMap(rows)
+
+  return ids
+    .map((id) => {
+      const count = counts.get(id) || 0
+      const previousCount = previousCounts.get(id) || 0
+      const behaviour = behaviourMap.get(id)
+
+      return {
+        id,
+        label: behaviour?.label || id.replaceAll('_', ' '),
+        count,
+        previousCount,
+        change: count - previousCount
+      }
+    })
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count || b.change - a.change || a.label.localeCompare(b.label, 'pt-PT'))
+}
+
+function dialysisHours(rows) {
+  const sessionsByDate = new Map()
+
+  rows.forEach((row) => {
+    let hours = 0
+    if (row.behaviourId === 'sessao_dialise_4h') hours = 4
+    if (row.behaviourId === 'sessao_dialise_6h30m') hours = 6.5
+    if (!hours) return
+
+    sessionsByDate.set(row.date, Math.max(sessionsByDate.get(row.date) || 0, hours))
+  })
+
+  return Array.from(sessionsByDate.values()).reduce((total, value) => total + value, 0)
+}
+
+function formatList(items, limit = 4) {
+  return items
+    .slice(0, limit)
+    .map((item) => `${item.label} (${item.count} ${item.count === 1 ? 'dia' : 'dias'})`)
+    .join(', ')
+}
+
+function buildPhosphorusAnalysis({ diary, behaviours, previousDate, latestDate, comparison }) {
+  const intervalDays = Math.max(1, daysBetween(latestDate, previousDate))
+  const comparisonStart = shiftIsoDate(previousDate, -intervalDays)
+  const currentRows = trueDiaryRowsBetween(diary, previousDate, latestDate)
+  const previousRows = trueDiaryRowsBetween(diary, comparisonStart, previousDate)
+  const currentCounts = behaviourCountMap(currentRows)
+  const previousCounts = behaviourCountMap(previousRows)
+  const behaviourMap = new Map(behaviours.map((behaviour) => [behaviour.id, behaviour]))
+
+  const hiddenItems = behaviourPeriodItems(currentRows, PHOSPHORUS_RULES.hiddenPhosphates, behaviourMap, previousCounts)
+  const directItems = behaviourPeriodItems(currentRows, PHOSPHORUS_RULES.directSources, behaviourMap, previousCounts)
+  const hypotheses = []
+  const questions = []
+
+  if (hiddenItems.length) {
+    const increased = hiddenItems.filter((item) => item.change > 0)
+    const evidence = formatList(increased.length ? increased : hiddenItems)
+
+    hypotheses.push({
+      title: 'Fósforo escondido em alimentos processados',
+      text: increased.length
+        ? `Foram registados alimentos com possível presença de fosfatos adicionados e alguns aumentaram face ao período anterior: ${evidence}.`
+        : `Foram registados alimentos que podem conter fosfatos adicionados: ${evidence}. A presença depende da marca, ingredientes e processamento.`,
+      tone: 'negative'
+    })
+    questions.push('Confirmar nos rótulos a presença de aditivos com “fosfato”, “ácido fosfórico” ou códigos E338–E341, E343 e E450–E452.')
+  }
+
+  const riskFoodDays = behaviourDays(currentRows, [...PHOSPHORUS_RULES.hiddenPhosphates, ...PHOSPHORUS_RULES.directSources])
+  const binderDays = currentCounts.get('quelante_fosforo') || 0
+  const forgottenDays = currentCounts.get('esquecimento_medicacao') || 0
+
+  if (forgottenDays > 0 || (riskFoodDays > 0 && binderDays > 0)) {
+    let text = ''
+
+    if (forgottenDays > 0) {
+      text = `Foram registados ${forgottenDays} ${forgottenDays === 1 ? 'dia' : 'dias'} com esquecimento da medicação.`
+    } else {
+      text = `O quelante foi registado em ${binderDays} ${binderDays === 1 ? 'dia' : 'dias'}, mas existiram ${riskFoodDays} dias com alimentos potencialmente relevantes. O diário não confirma se foi tomado com cada refeição ou snack com fósforo, nem se a dose e o momento foram adequados.`
+    }
+
+    hypotheses.push({
+      title: 'Cobertura do quelante a confirmar',
+      text,
+      tone: forgottenDays > 0 ? 'negative' : 'neutral'
+    })
+    questions.push('Confirmar se o quelante foi tomado com todas as refeições e snacks que continham fósforo, na dose e momento prescritos.')
+  }
+
+  const currentDialysisHours = dialysisHours(currentRows)
+  const previousDialysisHours = dialysisHours(previousRows)
+  const dialysisChange = previousDialysisHours > 0
+    ? ((currentDialysisHours - previousDialysisHours) / previousDialysisHours) * 100
+    : null
+
+  if (currentDialysisHours > 0 || previousDialysisHours > 0) {
+    const reduced = dialysisChange !== null && dialysisChange <= -10
+
+    hypotheses.push({
+      title: reduced ? 'Redução das horas de diálise registadas' : 'Adequação da diálise a rever',
+      text: previousDialysisHours > 0
+        ? `Foram registadas ${formatNumber(currentDialysisHours)} horas no período atual e ${formatNumber(previousDialysisHours)} horas no período anterior${dialysisChange !== null ? ` (${dialysisChange >= 0 ? '+' : ''}${dialysisChange.toFixed(1).replace('.', ',')}%)` : ''}. ${reduced ? 'A redução pode influenciar a remoção de fósforo e deve ser interpretada com a equipa clínica.' : 'A duração registada, faltas e adequação das sessões devem ser consideradas na leitura do resultado.'}`
+        : `Foram registadas ${formatNumber(currentDialysisHours)} horas de diálise no período. Não existem dados suficientes no período anterior para comparar.`,
+      tone: reduced ? 'negative' : 'neutral'
+    })
+    questions.push('Confirmar se existiram sessões encurtadas, faltas, alterações de frequência ou problemas de adequação da diálise.')
+  }
+
+  if (directItems.length && hypotheses.length < 3) {
+    hypotheses.push({
+      title: 'Fontes alimentares diretas de fósforo',
+      text: `Foram registadas fontes alimentares relevantes: ${formatList(directItems)}. O impacto depende das porções e da absorção do fósforo de cada alimento.`,
+      tone: 'neutral'
+    })
+  }
+
+  const otherPoints = []
+  const potassiumDays = behaviourDays(currentRows, PHOSPHORUS_RULES.potassium)
+  const proteinDays = behaviourDays(currentRows, PHOSPHORUS_RULES.protein)
+  const glycaemicItems = behaviourPeriodItems(currentRows, PHOSPHORUS_RULES.glycaemic, behaviourMap, previousCounts)
+  const sodiumDays = behaviourDays(currentRows, PHOSPHORUS_RULES.sodiumAndFluids)
+
+  if (potassiumDays > 0) {
+    otherPoints.push(`Potássio: foram registados ${potassiumDays} dias com alimentos explicitamente associados a maior carga de potássio. A leitura deve considerar quantidades, intervalo desde a última diálise, medicação e possível hemólise da amostra.`)
+  } else {
+    otherPoints.push('Potássio: não foram assinalados alimentos explicitamente classificados como ricos em potássio neste período; ainda assim, as quantidades e a composição real das refeições não são conhecidas.')
+  }
+
+  if (proteinDays > 0) {
+    otherPoints.push(`Ureia e nutrição: foram registadas fontes proteicas em ${proteinDays} dias. Não se deve reduzir proteína apenas com base nesta contagem; é necessário considerar porções, albumina e adequação da diálise.`)
+  }
+
+  if (glycaemicItems.length) {
+    const increasedGlycaemic = glycaemicItems.filter((item) => item.change > 0)
+    otherPoints.push(`Glicemia e triglicéridos: ${formatList(increasedGlycaemic.length ? increasedGlycaemic : glycaemicItems)} foram registados no período${increasedGlycaemic.length ? ' e aumentaram face ao período anterior' : ''}.`)
+  }
+
+  if (sodiumDays > 0) {
+    otherPoints.push(`Sódio e líquidos: existiram ${sodiumDays} dias com comportamentos potencialmente relevantes. Para interpretar melhor faltam o volume real de líquidos e o ganho de peso entre sessões.`)
+  } else {
+    otherPoints.push('Sódio e líquidos: não foram assinalados comportamentos de risco neste grupo, mas faltam valores reais de ingestão de líquidos e ganho de peso entre sessões.')
+  }
+
+  const conclusionParts = hypotheses.slice(0, 3).map((item) => item.title.toLowerCase())
+  const conclusion = conclusionParts.length
+    ? `A principal hipótese é a combinação de ${conclusionParts.join(' + ')}. Esta é uma leitura orientada por regras e pelos registos disponíveis, não uma conclusão clínica.`
+    : 'Os registos disponíveis não permitem destacar uma causa principal. Devem ser revistas porções, rótulos, adesão ao quelante e adequação da diálise.'
+
+  return {
+    intervalDays,
+    comparisonStart,
+    currentRows,
+    previousRows,
+    hypotheses,
+    otherPoints,
+    questions: Array.from(new Set(questions)),
+    conclusion,
+    comparison
+  }
+}
+
+function ClinicalRuleAnalysis({ analysis }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div className="section-header">
+        <h3>Hipóteses principais</h3>
+        <span>{analysis.hypotheses.length}</span>
+      </div>
+
+      {analysis.hypotheses.length > 0 ? (
+        analysis.hypotheses.map((item) => (
+          <div key={item.title} className={`suggestion-card ${item.tone || 'neutral'}`}>
+            <strong>{item.title}</strong>
+            <p>{item.text}</p>
+          </div>
+        ))
+      ) : (
+        <EmptyState title="Sem hipótese principal" text="Não foram encontrados registos suficientes para destacar fatores plausíveis neste período." compact />
+      )}
+
+      <div className="section-header">
+        <h3>Outros pontos a considerar</h3>
+      </div>
+
+      <div className="report-reading-card">
+        <ul>
+          {analysis.otherPoints.map((text) => <li key={text}>{text}</li>)}
+        </ul>
+      </div>
+
+      <div className="section-header">
+        <h3>O que falta confirmar</h3>
+      </div>
+
+      <div className="report-reading-card">
+        <ul>
+          {analysis.questions.length > 0
+            ? analysis.questions.map((text) => <li key={text}>{text}</li>)
+            : <li>Confirmar porções, rótulos dos alimentos, data e condições da colheita.</li>}
+        </ul>
+      </div>
+
+      <div className="suggestion-card neutral">
+        <strong>Conclusão orientativa</strong>
+        <p>{analysis.conclusion}</p>
+      </div>
+    </div>
+  )
+}
+
 function BiomarkerDetail({ id, exams, refs, onBack }) {
   const biomarker = biomarkers.find((b) => b.id === id)
 
@@ -2173,6 +2458,18 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
     })
   }, [behaviours, diary, previousBiomarkerExam, latestBiomarkerExam, biomarker])
 
+  const phosphorusAnalysis = useMemo(() => {
+    if (biomarker?.id !== 'fosforo_inorganico' || !comparison || !previousBiomarkerExam || !latestBiomarkerExam) return null
+
+    return buildPhosphorusAnalysis({
+      diary,
+      behaviours,
+      previousDate: previousBiomarkerExam.date,
+      latestDate: latestBiomarkerExam.date,
+      comparison
+    })
+  }, [biomarker, comparison, previousBiomarkerExam, latestBiomarkerExam, diary, behaviours])
+
   const reviewRows = periodRows.filter((row) => row.group === 'review').slice(0, 6)
   const supportiveRows = periodRows.filter((row) => row.group === 'supportive').slice(0, 6)
   const confidence = confidenceFromHistory(biomarkerExams.length)
@@ -2194,9 +2491,9 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
       <div className="intro-card clinical">
         <div className="intro-icon"><Activity size={22} /></div>
         <div>
-          <p className="eyebrow">Evolução recente</p>
-          <h2>O que mudou desde a última análise?</h2>
-          <p>Compara os dois resultados mais recentes e mostra os comportamentos registados entre as duas colheitas.</p>
+          <p className="eyebrow">Análise orientada por regras</p>
+          <h2>O que poderá explicar esta evolução?</h2>
+          <p>Compara os resultados e interpreta os comportamentos registados através de regras clínicas transparentes, sem inteligência artificial.</p>
         </div>
       </div>
 
@@ -2243,41 +2540,47 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
               {comparison.percentChange !== null && ` (${comparison.percentChange >= 0 ? '+' : ''}${comparison.percentChange.toFixed(1).replace('.', ',')}%)`}
             </p>
             <span>
-              Entre {formatDate(previousBiomarkerExam.date)} e {formatDate(latestBiomarkerExam.date)} · Confiança histórica: {confidence.toLowerCase()} ({biomarkerExams.length} análises)
+              Entre {formatDate(previousBiomarkerExam.date)} e {formatDate(latestBiomarkerExam.date)} · {biomarkerExams.length} análises disponíveis no histórico
             </span>
           </div>
 
-          <div className="section-header">
-            <h3>Comportamentos registados a rever</h3>
-            <span>{reviewRows.length}</span>
-          </div>
-
-          {reviewRows.length > 0 ? (
-            <div className="impact-list">
-              {reviewRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} />)}
-            </div>
+          {phosphorusAnalysis ? (
+            <ClinicalRuleAnalysis analysis={phosphorusAnalysis} />
           ) : (
-            <EmptyState title="Sem comportamentos assinalados" text="Não existem comportamentos relevantes marcados como Sim entre as duas análises." compact />
-          )}
+            <>
+              <div className="section-header">
+                <h3>Comportamentos registados a rever</h3>
+                <span>{reviewRows.length}</span>
+              </div>
 
-          <div className="section-header">
-            <h3>Adesão e fatores favoráveis registados</h3>
-            <span>{supportiveRows.length}</span>
-          </div>
+              {reviewRows.length > 0 ? (
+                <div className="impact-list">
+                  {reviewRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} />)}
+                </div>
+              ) : (
+                <EmptyState title="Sem comportamentos assinalados" text="Não existem comportamentos relevantes marcados como Sim entre as duas análises." compact />
+              )}
 
-          {supportiveRows.length > 0 ? (
-            <div className="impact-list">
-              {supportiveRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} positive />)}
-            </div>
-          ) : (
-            <EmptyState title="Sem fatores favoráveis assinalados" text="Não existem comportamentos deste grupo marcados como Sim durante o período analisado." compact />
+              <div className="section-header">
+                <h3>Adesão e fatores favoráveis registados</h3>
+                <span>{supportiveRows.length}</span>
+              </div>
+
+              {supportiveRows.length > 0 ? (
+                <div className="impact-list">
+                  {supportiveRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} positive />)}
+                </div>
+              ) : (
+                <EmptyState title="Sem fatores favoráveis assinalados" text="Não existem comportamentos deste grupo marcados como Sim durante o período analisado." compact />
+              )}
+            </>
           )}
         </>
       )}
 
       <div className="info-card warning-soft">
         <Sparkle />
-        <p>Esta leitura mostra coincidências temporais e fatores plausíveis a rever. Não prova causa-efeito e não deve justificar alterações de dieta, líquidos, diálise ou medicação sem validação clínica.</p>
+        <p>Esta leitura é produzida por regras fixas e pelos dados registados. Identifica hipóteses plausíveis, não prova causa-efeito e não deve justificar alterações de dieta, líquidos, diálise ou medicação sem validação clínica.</p>
       </div>
     </section>
   )
