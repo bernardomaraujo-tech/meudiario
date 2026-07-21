@@ -13,11 +13,6 @@
  *        .createTextOutput(JSON.stringify(createBehaviorAnalysis_(request.data || {})))
  *        .setMimeType(ContentService.MimeType.JSON);
  *    }
- *
- *    if (request.action === 'createBehaviorAnalysisFrame') {
- *      return createBehaviorAnalysisFrame_(request.data || {}, request.requestId || e.parameter.requestId || '');
- *    }
- *
  * 4. Criar uma nova versão da implementação da Web App.
  *
  * A chave da OpenAI nunca deve ser colocada no React, no GitHub ou no browser.
@@ -109,39 +104,6 @@ function createBehaviorAnalysis_(data) {
     model: model,
     analysis: analysis
   };
-}
-
-/**
- * Alternativa para browsers em que o Google Apps Script bloqueia a leitura do
- * POST por CORS. A resposta é aberta num iframe invisível e enviada ao React
- * através de postMessage. O requestId é validado no browser antes de aceitar a
- * mensagem.
- */
-function createBehaviorAnalysisFrame_(data, requestId) {
-  var payload;
-
-  try {
-    payload = createBehaviorAnalysis_(data);
-  } catch (error) {
-    payload = {
-      ok: false,
-      error: error && error.message ? error.message : 'Erro ao criar a análise.'
-    };
-  }
-
-  var message = {
-    source: 'meudiario-behaviour-analysis',
-    requestId: String(requestId || ''),
-    payload: payload
-  };
-  var serialized = JSON.stringify(message).replace(/</g, '\\u003c');
-  var html = '<!doctype html><html><body><script>' +
-    'window.parent.postMessage(' + serialized + ', "*");' +
-    '</script></body></html>';
-
-  return HtmlService
-    .createHtmlOutput(html)
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function validateBehaviorAnalysisInput_(data) {
