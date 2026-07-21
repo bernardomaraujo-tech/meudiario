@@ -534,39 +534,28 @@ function listKeyBehaviour(item) {
 function mergeListByKey(cloudList, localList, makeKey) {
   const merged = new Map()
 
-  // Primeiro carrega os dados locais, para preservar registos ainda não sincronizados.
   ;(Array.isArray(localList) ? localList : []).forEach((item) => {
     const key = makeKey(item)
 
     if (!key) return
 
-    merged.set(key, { ...item })
+    merged.set(key, item)
   })
 
-  // Depois aplica os dados da cloud, que são a fonte principal.
-  // O objeto values é fundido biomarcador a biomarcador para impedir que
-  // uma versão local antiga elimine resultados novos existentes no Google Sheets.
   ;(Array.isArray(cloudList) ? cloudList : []).forEach((item) => {
     const key = makeKey(item)
 
     if (!key) return
 
     const localItem = merged.get(key) || {}
-    const hasValues =
-      (localItem.values && typeof localItem.values === 'object') ||
-      (item.values && typeof item.values === 'object')
 
     merged.set(key, {
       ...localItem,
       ...item,
-      ...(hasValues
-        ? {
-            values: {
-              ...(localItem.values || {}),
-              ...(item.values || {})
-            }
-          }
-        : {})
+      values: {
+        ...(localItem.values || {}),
+        ...(item.values || {})
+      }
     })
   })
 
@@ -1650,52 +1639,171 @@ function MiniBar({ status }) {
   return <div className={`mini-bar ${status}`}><span /><span /><i /></div>
 }
 
-function buildImpactRows({ behaviours, exams, diary, biomarker, refs, windowDays }) {
-  if (!biomarker) return []
+const BIOMARKER_BEHAVIOUR_LINKS = {
+  hemoglobina: {
+    supportive: ['carne_vermelha', 'carne_branca', 'peixe', 'ovos', 'claras'],
+    review: ['esquecimento_medicacao']
+  },
+  hematocrito: {
+    supportive: ['carne_vermelha', 'carne_branca', 'peixe', 'ovos', 'claras'],
+    review: ['esquecimento_medicacao']
+  },
+  ferritina: {
+    supportive: ['carne_vermelha', 'carne_branca', 'peixe', 'ovos'],
+    review: ['esquecimento_medicacao']
+  },
+  ferro_serico: {
+    supportive: ['carne_vermelha', 'carne_branca', 'peixe', 'ovos'],
+    review: ['esquecimento_medicacao']
+  },
+  potassio: {
+    supportive: ['sessao_dialise_4h', 'sessao_dialise_6h30m'],
+    review: ['banana', 'batata_tomate_espinafres', 'fruta_rica_potassio', 'frutos_secos_sementes', 'leguminosas', 'laticinios', 'iogurte_normal', 'iogurte_vegan', 'leite']
+  },
+  fosforo_inorganico: {
+    supportive: ['quelante_fosforo', 'sessao_dialise_4h', 'sessao_dialise_6h30m'],
+    review: ['laticinios', 'queijo', 'leite', 'iogurte_normal', 'frutos_secos_sementes', 'refrigerante_cola', 'enchidos_carne_processada', 'refeicao_fora_fast_food']
+  },
+  paratormona_pth: {
+    supportive: ['quelante_fosforo', 'sessao_dialise_4h', 'sessao_dialise_6h30m'],
+    review: ['laticinios', 'queijo', 'leite', 'iogurte_normal', 'frutos_secos_sementes', 'refrigerante_cola', 'enchidos_carne_processada']
+  },
+  sodio: {
+    supportive: ['sessao_dialise_4h', 'sessao_dialise_6h30m'],
+    review: ['refeicao_salgada', 'enchidos_carne_processada', 'refeicao_fora_fast_food', 'liquidos_acima_limite']
+  },
+  albumina: {
+    supportive: ['peixe', 'carne_branca', 'carne_vermelha', 'ovos', 'claras'],
+    review: ['esquecimento_medicacao']
+  },
+  ureia_pre_dialise: {
+    supportive: ['sessao_dialise_4h', 'sessao_dialise_6h30m'],
+    review: ['carne_vermelha', 'carne_branca', 'peixe', 'ovos', 'laticinios']
+  },
+  ureia_pos_dialise: {
+    supportive: ['sessao_dialise_4h', 'sessao_dialise_6h30m'],
+    review: ['carne_vermelha', 'carne_branca', 'peixe', 'ovos', 'laticinios']
+  },
+  glicemia: {
+    supportive: ['atividade_fisica'],
+    review: ['doces_pastelaria', 'bolachas', 'chocolate', 'refrigerante_cola', 'refeicao_fora_fast_food']
+  },
+  hemoglobina_glicada: {
+    supportive: ['atividade_fisica'],
+    review: ['doces_pastelaria', 'bolachas', 'chocolate', 'refrigerante_cola', 'refeicao_fora_fast_food']
+  },
+  trigliceridos: {
+    supportive: ['atividade_fisica', 'peixe'],
+    review: ['doces_pastelaria', 'bolachas', 'chocolate', 'alcool', 'refeicao_fora_fast_food']
+  },
+  colesterol_total: {
+    supportive: ['atividade_fisica', 'peixe'],
+    review: ['enchidos_carne_processada', 'carne_vermelha', 'refeicao_fora_fast_food', 'doces_pastelaria']
+  },
+  colesterol_ldl: {
+    supportive: ['atividade_fisica', 'peixe'],
+    review: ['enchidos_carne_processada', 'carne_vermelha', 'refeicao_fora_fast_food', 'doces_pastelaria']
+  }
+}
+
+function distanceToReference(value, ref) {
+  const n = parseNum(value)
+
+  if (n === null) return null
+
+  const lo = parseNum(ref?.idealMin) ?? parseNum(ref?.sufficientMin)
+  const hi = parseNum(ref?.idealMax) ?? parseNum(ref?.sufficientMax)
+  const direction = ref?.direction || 'range'
+
+  if (direction === 'lower') {
+    const limit = hi ?? lo
+    if (limit === null) return null
+    return Math.max(0, n - limit)
+  }
+
+  if (direction === 'higher') {
+    const limit = lo ?? hi
+    if (limit === null) return null
+    return Math.max(0, limit - n)
+  }
+
+  if (lo === null && hi === null) return null
+  if (lo !== null && n < lo) return lo - n
+  if (hi !== null && n > hi) return n - hi
+
+  return 0
+}
+
+function compareBiomarkerValues(current, previous, ref) {
+  const currentValue = parseNum(current)
+  const previousValue = parseNum(previous)
+
+  if (currentValue === null || previousValue === null) return null
+
+  const absoluteChange = currentValue - previousValue
+  const percentChange = Math.abs(previousValue) > 0.00001
+    ? (absoluteChange / Math.abs(previousValue)) * 100
+    : null
+
+  const currentDistance = distanceToReference(currentValue, ref)
+  const previousDistance = distanceToReference(previousValue, ref)
+  let outcome = 'stable'
+
+  if (currentDistance !== null && previousDistance !== null) {
+    const distanceChange = currentDistance - previousDistance
+
+    if (distanceChange < -0.00001) outcome = 'improved'
+    if (distanceChange > 0.00001) outcome = 'worsened'
+  } else if (Math.abs(absoluteChange) > 0.00001) {
+    outcome = absoluteChange > 0 ? 'increased' : 'decreased'
+  }
+
+  return {
+    currentValue,
+    previousValue,
+    absoluteChange,
+    percentChange,
+    outcome
+  }
+}
+
+function diaryRowsBetween(diary, previousDate, latestDate) {
+  return diary.filter((item) => {
+    if (!item?.date || item.behaviourId === '__note__') return false
+    return item.date > previousDate && item.date <= latestDate
+  })
+}
+
+function summarisePeriodBehaviours({ behaviours, diary, previousDate, latestDate, biomarkerId }) {
+  const rows = diaryRowsBetween(diary, previousDate, latestDate)
+  const links = BIOMARKER_BEHAVIOUR_LINKS[biomarkerId] || { supportive: [], review: [] }
+  const linkedIds = new Set([...links.supportive, ...links.review])
 
   return behaviours
+    .filter((behaviour) => linkedIds.has(behaviour.id))
     .map((behaviour) => {
-      const yesValues = []
-      const noValues = []
-
-      exams.forEach((exam) => {
-        const value = parseNum(exam.values?.[biomarker.id])
-
-        if (value === null) return
-
-        const related = diary.filter((d) => {
-          return d.behaviourId === behaviour.id &&
-            daysBetween(exam.date, d.date) >= 0 &&
-            daysBetween(exam.date, d.date) <= Number(windowDays)
-        })
-
-        if (!related.length) return
-
-        const hadYes = related.some((d) => d.value === true)
-        const hadOnlyNo = related.every((d) => d.value !== true)
-
-        if (hadYes) yesValues.push(value)
-        if (hadOnlyNo) noValues.push(value)
-      })
-
-      const avgYes = average(yesValues)
-      const avgNo = average(noValues)
-      const score = classifyImpact(avgYes, avgNo, biomarker, getReferenceConfig(biomarker.id, refs))
+      const behaviourRows = rows.filter((item) => item.behaviourId === behaviour.id)
+      const yesCount = behaviourRows.filter((item) => item.value === true).length
+      const noCount = behaviourRows.filter((item) => item.value === false).length
+      const totalCount = yesCount + noCount
 
       return {
         behaviour,
-        avgYes,
-        avgNo,
-        yesCount: yesValues.length,
-        noCount: noValues.length,
-        score
+        group: links.supportive.includes(behaviour.id) ? 'supportive' : 'review',
+        yesCount,
+        noCount,
+        totalCount,
+        rate: totalCount ? (yesCount / totalCount) * 100 : null
       }
     })
-    .sort((a, b) => Math.abs(b.score ?? 0) - Math.abs(a.score ?? 0))
+    .filter((row) => row.totalCount > 0)
+    .sort((a, b) => b.yesCount - a.yesCount || b.totalCount - a.totalCount || a.behaviour.label.localeCompare(b.behaviour.label, 'pt-PT'))
 }
 
-function validImpact(row) {
-  return row.score !== null && row.yesCount >= 1 && row.noCount >= 1
+function confidenceFromHistory(examCount) {
+  if (examCount >= 8) return 'Elevada'
+  if (examCount >= 4) return 'Média'
+  return 'Baixa'
 }
 
 function BiomarkerDetail({ id, exams, refs, onBack }) {
@@ -2017,7 +2125,6 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
   const targetBiomarkers = targetCards.map((card) => card.biomarker)
   const fallbackSelected = initialSelected || targetBiomarkers[0]?.id || biomarkers[0]?.id
   const [selected, setSelected] = useState(fallbackSelected)
-  const [windowDays, setWindowDays] = useState(7)
 
   useEffect(() => {
     if (initialSelected) setSelected(initialSelected)
@@ -2034,21 +2141,47 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
   const biomarker = biomarkers.find((b) => b.id === selected) || targetBiomarkers[0] || biomarkers[0]
   const selectedCard = targetCards.find((card) => card.biomarker.id === biomarker?.id)
 
-  const impactRows = useMemo(() => {
-    return buildImpactRows({ behaviours, exams, diary, biomarker, refs, windowDays })
-  }, [behaviours, exams, diary, biomarker, refs, windowDays])
+  const biomarkerExams = useMemo(() => {
+    return [...exams]
+      .filter((exam) => parseNum(exam.values?.[biomarker?.id]) !== null)
+      .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))
+  }, [exams, biomarker])
 
-  const harmful = impactRows.filter((row) => validImpact(row) && row.score < -3).slice(0, 3)
-  const helpful = impactRows.filter((row) => validImpact(row) && row.score > 3).slice(0, 3)
+  const latestBiomarkerExam = biomarkerExams[biomarkerExams.length - 1] || null
+  const previousBiomarkerExam = biomarkerExams[biomarkerExams.length - 2] || null
+  const refConfig = getReferenceConfig(biomarker?.id, refs)
+  const comparison = latestBiomarkerExam && previousBiomarkerExam
+    ? compareBiomarkerValues(
+        latestBiomarkerExam.values?.[biomarker.id],
+        previousBiomarkerExam.values?.[biomarker.id],
+        refConfig
+      )
+    : null
+
+  const periodRows = useMemo(() => {
+    if (!previousBiomarkerExam || !latestBiomarkerExam || !biomarker) return []
+
+    return summarisePeriodBehaviours({
+      behaviours,
+      diary,
+      previousDate: previousBiomarkerExam.date,
+      latestDate: latestBiomarkerExam.date,
+      biomarkerId: biomarker.id
+    })
+  }, [behaviours, diary, previousBiomarkerExam, latestBiomarkerExam, biomarker])
+
+  const reviewRows = periodRows.filter((row) => row.group === 'review').slice(0, 6)
+  const supportiveRows = periodRows.filter((row) => row.group === 'supportive').slice(0, 6)
+  const confidence = confidenceFromHistory(biomarkerExams.length)
 
   if (!latestExam) {
-    return <EmptyState title="Ainda não existem análises" text="Insere primeiro uma análise para a app conseguir cruzar biomarcadores com o diário de comportamentos." />
+    return <EmptyState title="Ainda não existem análises" text="Insere primeiro uma análise para a app conseguir comparar a evolução dos biomarcadores com o diário." />
   }
 
   if (!targetBiomarkers.length) {
     return (
       <section className="screen">
-        <EmptyState title="Sem biomarcadores para analisar" text="A última análise não tem biomarcadores com valor preenchido. A análise de impacto fica disponível quando existir pelo menos um valor registado." />
+        <EmptyState title="Sem biomarcadores para analisar" text="A última análise não tem biomarcadores com valor preenchido." />
       </section>
     )
   }
@@ -2058,9 +2191,9 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
       <div className="intro-card clinical">
         <div className="intro-icon"><Activity size={22} /></div>
         <div>
-          <p className="eyebrow">Análise geral</p>
-          <h2>Impacto em todos os biomarcadores</h2>
-          <p>Seleciona qualquer biomarcador com valor na última análise e cruza-o com o diário de comportamentos.</p>
+          <p className="eyebrow">Evolução recente</p>
+          <h2>O que mudou desde a última análise?</h2>
+          <p>Compara os dois resultados mais recentes e mostra os comportamentos registados entre as duas colheitas.</p>
         </div>
       </div>
 
@@ -2070,11 +2203,6 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
           <select value={selected} onChange={(e) => setSelected(e.target.value)}>
             {targetBiomarkers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
-        </label>
-
-        <label>
-          Janela de análise
-          <input type="number" min="1" max="90" value={windowDays} onChange={(e) => setWindowDays(e.target.value)} />
         </label>
       </div>
 
@@ -2089,59 +2217,71 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
         </div>
       )}
 
-      <div className="section-header">
-        <h3>Sugestões de comportamento</h3>
-      </div>
+      {!comparison && (
+        <div className="suggestion-card neutral">
+          <strong>Ainda sem comparação disponível</strong>
+          <p>É necessária uma segunda análise com valor para {biomarker.name}.</p>
+          <span>O acompanhamento começa logo que existam dois resultados deste biomarcador.</span>
+        </div>
+      )}
 
-      <div className="suggestion-grid">
-        {harmful.length > 0 && (
-          <div className="suggestion-card negative">
-            <strong>Possível foco de redução</strong>
-            <p>{harmful.map((row) => row.behaviour.label).join(', ')}</p>
-            <span>Comportamentos associados a pior resultado neste biomarcador.</span>
+      {comparison && (
+        <>
+          <div className={`suggestion-card ${comparison.outcome === 'worsened' ? 'negative' : comparison.outcome === 'improved' ? 'positive' : 'neutral'}`}>
+            <strong>
+              {comparison.outcome === 'worsened' && 'O biomarcador afastou-se da referência'}
+              {comparison.outcome === 'improved' && 'O biomarcador aproximou-se da referência'}
+              {comparison.outcome === 'stable' && 'O biomarcador manteve-se estável'}
+              {comparison.outcome === 'increased' && 'O biomarcador aumentou'}
+              {comparison.outcome === 'decreased' && 'O biomarcador diminuiu'}
+            </strong>
+            <p>
+              {formatNumber(comparison.previousValue)} → {formatNumber(comparison.currentValue)} {biomarker.unit}
+              {comparison.percentChange !== null && ` (${comparison.percentChange >= 0 ? '+' : ''}${comparison.percentChange.toFixed(1).replace('.', ',')}%)`}
+            </p>
+            <span>
+              Entre {formatDate(previousBiomarkerExam.date)} e {formatDate(latestBiomarkerExam.date)} · Confiança histórica: {confidence.toLowerCase()} ({biomarkerExams.length} análises)
+            </span>
           </div>
-        )}
 
-        {helpful.length > 0 && (
-          <div className="suggestion-card positive">
-            <strong>Possível foco a manter</strong>
-            <p>{helpful.map((row) => row.behaviour.label).join(', ')}</p>
-            <span>Comportamentos associados a melhor resultado neste biomarcador.</span>
+          <div className="section-header">
+            <h3>Comportamentos a rever no período</h3>
+            <span>{reviewRows.length}</span>
           </div>
-        )}
 
-        {!harmful.length && !helpful.length && (
-          <div className="suggestion-card neutral">
-            <strong>Ainda sem padrão suficiente</strong>
-            <p>Continua a registar diário e análises para gerar sugestões mais úteis.</p>
-            <span>É preciso haver dias com “Sim” e “Não” para comparar.</span>
+          {reviewRows.length > 0 ? (
+            <div className="impact-list">
+              {reviewRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} />)}
+            </div>
+          ) : (
+            <EmptyState title="Sem comportamentos associados registados" text="Não foram encontrados comportamentos relevantes para este biomarcador entre as duas análises." compact />
+          )}
+
+          <div className="section-header">
+            <h3>Adesão e fatores potencialmente favoráveis</h3>
+            <span>{supportiveRows.length}</span>
           </div>
-        )}
-      </div>
 
-      <div className="impact-legend">
-        <span>Prejudica</span>
-        <strong>Impacto</strong>
-        <span>Ajuda</span>
-      </div>
-
-      <div className="impact-list">
-        {impactRows.map((row) => <ImpactRow key={row.behaviour.id} row={row} />)}
-      </div>
+          {supportiveRows.length > 0 ? (
+            <div className="impact-list">
+              {supportiveRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} positive />)}
+            </div>
+          ) : (
+            <EmptyState title="Sem registos favoráveis associados" text="Não existem registos suficientes deste grupo durante o período analisado." compact />
+          )}
+        </>
+      )}
 
       <div className="info-card warning-soft">
         <Sparkle />
-        <p>A app identifica correlações entre diário e análises. Não prova causa-efeito e não deve alterar dieta, líquidos ou medicação sem validação clínica.</p>
+        <p>Esta leitura mostra coincidências temporais e fatores plausíveis a rever. Não prova causa-efeito e não deve justificar alterações de dieta, líquidos, diálise ou medicação sem validação clínica.</p>
       </div>
     </section>
   )
 }
 
-function ImpactRow({ row }) {
-  const score = row.score
-  const valid = validImpact(row)
-  const normalized = Math.max(-1, Math.min(1, (score || 0) / 30))
-  const label = !valid ? '—' : `${score > 0 ? '+' : ''}${score.toFixed(1)}%`
+function PeriodBehaviourRow({ row, positive = false }) {
+  const percentage = row.rate === null ? 0 : row.rate
 
   return (
     <div className="impact-row">
@@ -2149,10 +2289,13 @@ function ImpactRow({ row }) {
 
       <div className="impact-scale">
         <i />
-        <span className={valid && score >= 0 ? 'positive' : 'negative'} style={{ transform: `translateX(${normalized * 92}px)` }} />
+        <span
+          className={positive ? 'positive' : 'negative'}
+          style={{ transform: `translateX(${Math.max(-92, Math.min(92, ((percentage - 50) / 50) * 92))}px)` }}
+        />
       </div>
 
-      <b className={valid && score >= 0 ? 'positive' : 'negative'}>{label}</b>
+      <b className={positive ? 'positive' : 'negative'}>{row.yesCount}/{row.totalCount} dias</b>
     </div>
   )
 }
