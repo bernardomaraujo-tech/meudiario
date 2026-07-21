@@ -892,6 +892,28 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   margin-top: 2px;
 }
 
+.analysis-context-notice {
+  padding: 13px 14px;
+  border: 1px solid #cfe1f3;
+  border-radius: 17px;
+  background: linear-gradient(135deg, #ffffff, #eef7ff);
+}
+
+.analysis-context-notice strong {
+  display: block;
+  color: #174f87;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.analysis-context-notice p {
+  margin: 5px 0 0;
+  color: #425f79;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 650;
+}
+
 .analysis-section-heading {
   display: flex;
   align-items: flex-end;
