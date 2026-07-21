@@ -2045,9 +2045,342 @@ function buildPhosphorusAnalysis({ diary, behaviours, previousDate, latestDate, 
   }
 }
 
+function latestReadingUpToDate(exams, biomarkerId, upToDate, refs) {
+  const exam = [...exams]
+    .filter((item) => item?.date <= upToDate && parseNum(item.values?.[biomarkerId]) !== null)
+    .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))
+    .at(-1)
+
+  if (!exam) return null
+
+  const value = parseNum(exam.values?.[biomarkerId])
+  const refConfig = getReferenceConfig(biomarkerId, refs)
+  const lowerLimit = parseNum(refConfig?.sufficientMin) ?? parseNum(refConfig?.idealMin)
+  const upperLimit = parseNum(refConfig?.sufficientMax) ?? parseNum(refConfig?.idealMax)
+  let position = 'within'
+
+  if (lowerLimit !== null && value < lowerLimit) position = 'below'
+  if (upperLimit !== null && value > upperLimit) position = 'above'
+  if (lowerLimit === null && upperLimit === null) position = 'unknown'
+
+  return { exam, value, refConfig, lowerLimit, upperLimit, position }
+}
+
+function buildParathormoneAnalysis({ diary, behaviours, exams, refs, previousDate, latestDate, comparison }) {
+  const intervalDays = Math.max(1, daysBetween(latestDate, previousDate))
+  const comparisonStart = shiftIsoDate(previousDate, -intervalDays)
+  const currentRows = trueDiaryRowsBetween(diary, previousDate, latestDate)
+  const previousRows = trueDiaryRowsBetween(diary, comparisonStart, previousDate)
+  const currentCounts = behaviourCountMap(currentRows)
+  const previousCounts = behaviourCountMap(previousRows)
+  const behaviourMap = new Map(behaviours.map((behaviour) => [behaviour.id, behaviour]))
+  const hiddenItems = behaviourPeriodItems(currentRows, PHOSPHORUS_RULES.hiddenPhosphates, behaviourMap, previousCounts)
+  const directItems = behaviourPeriodItems(currentRows, PHOSPHORUS_RULES.directSources, behaviourMap, previousCounts)
+  const phosphorusReading = latestReadingUpToDate(exams, 'fosforo_inorganico', latestDate, refs)
+  const calciumReading = latestReadingUpToDate(exams, 'calcio_total', latestDate, refs)
+  const hypotheses = []
+  const otherPoints = []
+  const questions = []
+
+  if (phosphorusReading?.position === 'above') {
+    hypotheses.push({
+      title: 'Fósforo elevado como estímulo persistente',
+      text: `O fósforo mais recente foi ${formatNumber(phosphorusReading.value)} mg/dL em ${formatDate(phosphorusReading.exam.date)}, acima do intervalo configurado. Quando se mantém elevado, pode contribuir para o aumento da PTH e deve ser interpretado pela tendência das várias análises.`,
+      tone: 'negative'
+    })
+  } else if (phosphorusReading) {
+    otherPoints.push(`Fósforo: o resultado mais recente foi ${formatNumber(phosphorusReading.value)} mg/dL em ${formatDate(phosphorusReading.exam.date)} e não estava acima do intervalo configurado. Um valor isolado não exclui exposição elevada ao fósforo ao longo do período.`)
+  } else {
+    questions.push('Confirmar o resultado e a evolução recente do fósforo, idealmente na mesma colheita da PTH.')
+  }
+
+  if (calciumReading?.position === 'below') {
+    hypotheses.push({
+      title: 'Cálcio baixo a considerar',
+      text: `O cálcio total mais recente foi ${formatNumber(calciumReading.value)} mg/dL em ${formatDate(calciumReading.exam.date)}, abaixo do intervalo configurado. O cálcio baixo pode estimular a produção de PTH, mas deve ser interpretado com albumina, medicação e prescrição da diálise.`,
+      tone: 'negative'
+    })
+  } else if (calciumReading?.position === 'above') {
+    otherPoints.push(`Cálcio: o resultado mais recente foi ${formatNumber(calciumReading.value)} mg/dL, acima do intervalo configurado. Este dado condiciona a interpretação e o tratamento da PTH e deve ser revisto pela equipa clínica.`)
+  } else if (calciumReading) {
+    otherPoints.push(`Cálcio: o resultado mais recente foi ${formatNumber(calciumReading.value)} mg/dL em ${formatDate(calciumReading.exam.date)}, dentro do intervalo configurado.`)
+  } else {
+    questions.push('Confirmar cálcio total, albumina e, quando indicado pela equipa clínica, cálcio corrigido ou ionizado.')
+  }
+
+  const phosphateFoodItems = [...hiddenItems, ...directItems]
+    .sort((a, b) => b.count - a.count || b.change - a.change)
+  const increasedFoodItems = phosphateFoodItems.filter((item) => item.change > 0)
+
+  if (phosphateFoodItems.length && hypotheses.length < 3) {
+    hypotheses.push({
+      title: 'Carga alimentar de fósforo a rever',
+      text: `Foram registadas fontes alimentares potencialmente relevantes: ${formatList(increasedFoodItems.length ? increasedFoodItems : phosphateFoodItems)}. O impacto na PTH é indireto e depende de manterem o fósforo elevado ao longo do tempo, das porções e dos aditivos presentes.`,
+      tone: increasedFoodItems.length ? 'negative' : 'neutral'
+    })
+    questions.push('Confirmar porções e rótulos, sobretudo aditivos com “fosfato”, “ácido fosfórico”, “difosfato” ou “polifosfato”.')
+  }
+
+  const riskFoodDays = behaviourDays(currentRows, [...PHOSPHORUS_RULES.hiddenPhosphates, ...PHOSPHORUS_RULES.directSources])
+  const binderDays = currentCounts.get('quelante_fosforo') || 0
+  const forgottenDays = currentCounts.get('esquecimento_medicacao') || 0
+
+  if (hypotheses.length < 3 && (forgottenDays > 0 || riskFoodDays > 0)) {
+    let text = ''
+
+    if (forgottenDays > 0) {
+      text = `Foram registados ${forgottenDays} ${forgottenDays === 1 ? 'dia' : 'dias'} com esquecimento da medicação. O diário não identifica qual foi o medicamento nem permite confirmar a adesão ao tratamento específico da PTH.`
+    } else if (binderDays > 0) {
+      text = `O quelante foi registado em ${binderDays} ${binderDays === 1 ? 'dia' : 'dias'}, mas existiram ${riskFoodDays} dias com alimentos potencialmente relevantes. Falta confirmar a toma com cada refeição e snack com fósforo.`
+    } else {
+      text = `Existiram ${riskFoodDays} dias com alimentos potencialmente relevantes e não existem registos positivos de quelante no período. É necessário confirmar se estava prescrito e como foi tomado.`
+    }
+
+    hypotheses.push({
+      title: forgottenDays > 0 ? 'Adesão à medicação a confirmar' : 'Cobertura do quelante a confirmar',
+      text,
+      tone: forgottenDays > 0 || binderDays === 0 ? 'negative' : 'neutral'
+    })
+  }
+
+  const currentDialysisHours = dialysisHours(currentRows)
+  const previousDialysisHours = dialysisHours(previousRows)
+  const dialysisChange = previousDialysisHours > 0
+    ? ((currentDialysisHours - previousDialysisHours) / previousDialysisHours) * 100
+    : null
+  const reducedDialysis = dialysisChange !== null && dialysisChange <= -10
+
+  if (reducedDialysis && hypotheses.length < 3) {
+    hypotheses.push({
+      title: 'Redução das horas de diálise registadas',
+      text: `Foram registadas ${formatNumber(currentDialysisHours)} horas no período atual e ${formatNumber(previousDialysisHours)} no período anterior (${dialysisChange.toFixed(1).replace('.', ',')}%). A redução pode dificultar o controlo do fósforo e influenciar indiretamente a PTH.`,
+      tone: 'negative'
+    })
+  } else if (currentDialysisHours > 0 || previousDialysisHours > 0) {
+    otherPoints.push(previousDialysisHours > 0
+      ? `Diálise: foram registadas ${formatNumber(currentDialysisHours)} horas no período atual e ${formatNumber(previousDialysisHours)} no anterior. As horas, por si só, não demonstram adequação; devem ser consideradas frequência, faltas, sessões encurtadas e indicadores definidos pela equipa clínica.`
+      : `Diálise: foram registadas ${formatNumber(currentDialysisHours)} horas no período atual, sem dados comparáveis suficientes no período anterior.`)
+  }
+
+  otherPoints.unshift('Referência clínica: em hemodiálise, a PTH deve ser interpretada pela evolução seriada e relativamente ao limite superior do método laboratorial. O intervalo geral do laboratório pode não corresponder ao objetivo individual definido pela nefrologia.')
+  otherPoints.push('Vitamina D e tratamento específico: o diário não regista 25-OH vitamina D, calcimiméticos, calcitriol ou análogos da vitamina D. Alterações de dose, adesão e tolerância podem influenciar a evolução da PTH.')
+
+  questions.push('Confirmar o objetivo individual de PTH definido pela nefrologia e o limite superior do método usado pelo laboratório.')
+  questions.push('Confirmar 25-OH vitamina D e a medicação específica para a PTH, incluindo alterações recentes de dose e adesão.')
+  questions.push('Rever fósforo, cálcio e PTH em conjunto e pela tendência, não apenas por um resultado isolado.')
+
+  const conclusionParts = hypotheses.slice(0, 3).map((item) => item.title.toLowerCase())
+  const conclusion = conclusionParts.length
+    ? `As hipóteses mais relevantes são ${conclusionParts.join(' + ')}. Na paratormona, a alimentação atua sobretudo através do controlo persistente do fósforo; cálcio, vitamina D, medicação e tendência laboratorial têm de ser avaliados em conjunto.`
+    : 'Os comportamentos registados não explicam isoladamente a evolução da PTH. É necessário rever fósforo, cálcio, vitamina D, medicação específica e o objetivo individual definido pela nefrologia.'
+
+  return {
+    intervalDays,
+    comparisonStart,
+    currentRows,
+    previousRows,
+    hypotheses,
+    otherPoints,
+    questions: Array.from(new Set(questions)),
+    conclusion,
+    comparison,
+    notice: {
+      title: 'A referência da PTH em diálise é diferente',
+      text: 'Em hemodiálise, a PTH é habitualmente interpretada pela tendência e em relação ao limite superior do método laboratorial, muitas vezes numa faixa aproximada de 2 a 9 vezes esse limite. Deve prevalecer o objetivo individual definido pela nefrologia.'
+    }
+  }
+}
+
+function genericAnalysisGuidance(biomarker, position) {
+  const id = biomarker?.id
+  const category = biomarker?.category
+
+  if (['hemoglobina', 'hematocrito', 'eritrocitos', 'vgm', 'hgm', 'cmhg', 'rdw'].includes(id)) {
+    return {
+      title: position === 'below' ? 'Nutrição e tratamento da anemia a rever' : 'Resultado hematológico a contextualizar',
+      context: 'A alimentação registada não explica isoladamente este resultado. Em hemodiálise devem ser considerados ferro, medicação da anemia, perdas de sangue, inflamação e estado de hidratação.',
+      questions: ['Confirmar ferro, ferritina, saturação da transferrina, medicação da anemia, perdas de sangue e estado de hidratação.']
+    }
+  }
+
+  if (['ferro_serico', 'ferritina', 'capacidade_fixacao_ferro', 'sideremia'].includes(id)) {
+    return {
+      title: 'Aporte alimentar e tratamento do ferro a rever',
+      context: 'Carne, peixe e ovos contribuem para o aporte, mas o resultado também depende de suplementação, perdas de sangue e inflamação. A ferritina pode aumentar com inflamação.',
+      questions: ['Confirmar saturação da transferrina, proteína C reativa, ferro administrado e perdas de sangue recentes.']
+    }
+  }
+
+  if (id === 'potassio') {
+    return {
+      title: position === 'above' ? 'Carga alimentar de potássio a rever' : 'Equilíbrio do potássio a contextualizar',
+      context: position === 'above'
+        ? 'As quantidades, aditivos com potássio, intervalo desde a última diálise, medicação e possível hemólise da amostra podem ter impacto.'
+        : 'Quando o potássio não está elevado, os mesmos alimentos não devem ser classificados automaticamente como negativos; importa confirmar o valor, sintomas e prescrição da diálise.',
+      questions: ['Confirmar intervalo desde a última diálise, medicação, dialisante, quantidades alimentares e possível hemólise da amostra.']
+    }
+  }
+
+  if (id === 'sodio') {
+    return {
+      title: 'Sódio, líquidos e estado de hidratação a rever',
+      context: 'O sódio no sangue não depende apenas do sal ingerido. Devem ser considerados líquidos, glicemia, perdas, peso entre sessões e contexto da colheita.',
+      questions: ['Confirmar ingestão real de líquidos, ganho de peso entre sessões, tensão arterial, glicemia e perdas gastrointestinais.']
+    }
+  }
+
+  if (['ureia_pre_dialise', 'ureia_pos_dialise', 'creatininemia'].includes(id)) {
+    return {
+      title: position === 'above' ? 'Proteína e adequação da diálise a rever' : 'Nutrição e contexto da diálise a rever',
+      context: 'Proteína, massa muscular, intervalo desde a última sessão e eficácia da diálise podem influenciar o resultado. Não se deve reduzir proteína apenas com base nesta contagem.',
+      questions: ['Confirmar porções proteicas, sessão anterior, ureia pré e pós-diálise, adequação da diálise, peso e massa muscular.']
+    }
+  }
+
+  if (['albumina', 'proteinas_totais'].includes(id)) {
+    return {
+      title: position === 'below' ? 'Estado nutricional e inflamação a rever' : 'Proteína e hidratação a contextualizar',
+      context: 'A frequência de alimentos proteicos é apenas um indicador indireto. Porções, ingestão energética, inflamação, perdas e hidratação têm grande influência.',
+      questions: ['Confirmar porções, evolução do peso, apetite, proteína C reativa, perdas e avaliação nutricional.']
+    }
+  }
+
+  if (['glicemia', 'hemoglobina_glicada', 'glicemia_media_estimada'].includes(id)) {
+    return {
+      title: position === 'above' ? 'Açúcares e hidratos refinados a rever' : 'Controlo glicémico a contextualizar',
+      context: 'Doces, bolachas, chocolate e refeições processadas podem contribuir quando o valor está elevado. Quantidades, jejum, medicação e duração do período analisado são essenciais.',
+      questions: ['Confirmar se a colheita foi em jejum, quantidades, medicação, episódios de hipoglicemia e evolução das glicemias.']
+    }
+  }
+
+  if (['trigliceridos', 'colesterol_total', 'colesterol_ldl', 'colesterol_hdl'].includes(id)) {
+    return {
+      title: position === 'above' ? 'Padrão alimentar e atividade física a rever' : 'Perfil lipídico a contextualizar',
+      context: 'Doces, carne processada, carne vermelha, álcool e refeições fora podem ter impacto, mas porções, gorduras utilizadas, genética e medicação não constam do diário.',
+      questions: ['Confirmar jejum, porções, tipo de gorduras, peso, medicação e histórico familiar.']
+    }
+  }
+
+  if (id === 'acido_urico') {
+    return {
+      title: 'Fontes de purinas e diálise a rever',
+      context: 'Carne vermelha, marisco, alguns peixes e álcool podem contribuir, mas o resultado também depende da diálise, medicação e produção metabólica.',
+      questions: ['Confirmar porções, tipo de peixe, álcool, medicação e sessão anterior à colheita.']
+    }
+  }
+
+  if (['calcio_total', 'magnesio'].includes(id)) {
+    return {
+      title: 'Alimentação, medicação e diálise a rever',
+      context: 'O diário alimentar é insuficiente para explicar isoladamente estes minerais. Quelantes, suplementos, vitamina D, albumina e composição do dialisante podem ser determinantes.',
+      questions: ['Confirmar albumina, suplementos, quelantes, vitamina D, medicação e composição do dialisante.']
+    }
+  }
+
+  if (id === 'proteina_c_reactiva' || ['leucocitos', 'neutrofilos', 'eosinofilos', 'basofilos', 'linfocitos', 'monocitos'].includes(id)) {
+    return {
+      title: 'Inflamação ou resposta imunitária a confirmar',
+      context: 'O diário atual não permite atribuir este resultado à alimentação. Infeção, inflamação, alergia, medicação e momento da colheita devem ser avaliados clinicamente.',
+      questions: ['Confirmar sintomas, infeções recentes, acesso vascular, alergias, medicação e outros marcadores inflamatórios.']
+    }
+  }
+
+  if (id === 'alanina_aminotransferase' || id === 'fosfatase_alcalina') {
+    return {
+      title: 'Contexto hepático, ósseo e medicação a rever',
+      context: 'Álcool e refeições processadas são apenas parte da leitura. Medicação, infeção, exercício e, no caso da fosfatase alcalina, metabolismo ósseo também podem influenciar.',
+      questions: ['Confirmar medicação, álcool, exercício intenso, sintomas e restantes marcadores hepáticos ou ósseos.']
+    }
+  }
+
+  if (category === 'Próstata') {
+    return {
+      title: 'Sem associação direta com o diário atual',
+      context: 'Os comportamentos registados nesta app não permitem explicar de forma útil a evolução deste marcador prostático.',
+      questions: ['Interpretar com idade, sintomas, infeção ou inflamação, procedimentos recentes e avaliação médica.']
+    }
+  }
+
+  return {
+    title: 'Sem associação direta identificada no diário',
+    context: 'Os comportamentos atualmente registados não permitem explicar este biomarcador com segurança. A evolução laboratorial e o contexto clínico têm maior importância.',
+    questions: ['Confirmar condições da colheita, medicação, sintomas e interpretação com a equipa clínica.']
+  }
+}
+
+function formatPeriodBehaviourRows(rows, limit = 4) {
+  return rows
+    .slice(0, limit)
+    .map((row) => `${row.behaviour.label} (${row.yesCount} ${row.yesCount === 1 ? 'dia' : 'dias'})`)
+    .join(', ')
+}
+
+function buildGenericClinicalAnalysis({ biomarker, periodRows, previousDate, latestDate, comparison, exams, refs }) {
+  const reading = latestReadingUpToDate(exams, biomarker.id, latestDate, refs)
+  const guidance = genericAnalysisGuidance(biomarker, reading?.position || 'unknown')
+  const reviewRows = periodRows.filter((row) => row.group === 'review')
+  const supportiveRows = periodRows.filter((row) => row.group === 'supportive')
+  const forgottenMedication = reviewRows.find((row) => row.behaviour.id === 'esquecimento_medicacao')
+  const behaviourRows = reviewRows.filter((row) => row.behaviour.id !== 'esquecimento_medicacao')
+  const hypotheses = []
+  const otherPoints = []
+  const questions = [...guidance.questions]
+
+  if (behaviourRows.length > 0) {
+    hypotheses.push({
+      title: guidance.title,
+      text: `Foram registados comportamentos potencialmente relevantes entre ${formatDate(previousDate)} e ${formatDate(latestDate)}: ${formatPeriodBehaviourRows(behaviourRows)}. ${guidance.context}`,
+      tone: comparison.outcome === 'worsened' ? 'negative' : 'neutral'
+    })
+  } else {
+    hypotheses.push({
+      title: guidance.title,
+      text: `Não foram assinalados comportamentos de risco diretamente ligados a este biomarcador no período analisado. ${guidance.context}`,
+      tone: 'neutral'
+    })
+  }
+
+  if (forgottenMedication) {
+    hypotheses.push({
+      title: 'Adesão à medicação a confirmar',
+      text: `Foram registados ${forgottenMedication.yesCount} ${forgottenMedication.yesCount === 1 ? 'dia' : 'dias'} com esquecimento da medicação. O diário não identifica o medicamento nem permite confirmar uma relação direta com o resultado.`,
+      tone: 'negative'
+    })
+    questions.push('Identificar qual a medicação esquecida e confirmar se pode influenciar este biomarcador.')
+  }
+
+  if (supportiveRows.length > 0) {
+    otherPoints.push(`Fatores favoráveis registados: ${formatPeriodBehaviourRows(supportiveRows)}. A presença destes comportamentos não garante, por si só, um resultado dentro do objetivo.`)
+  } else {
+    otherPoints.push('Não existem fatores favoráveis específicos assinalados no diário para este biomarcador durante o período analisado.')
+  }
+
+  otherPoints.push(`Cobertura temporal: foram analisados os comportamentos entre ${formatDate(previousDate)} e ${formatDate(latestDate)}. Frequência não equivale a quantidade, dose ou intensidade.`)
+  questions.push('Confirmar porções, quantidades, horários e condições da colheita, que não constam do registo diário.')
+
+  const conclusion = behaviourRows.length > 0
+    ? `Os comportamentos assinalados podem ter contribuído para a evolução de ${biomarker.name}, mas os dados não demonstram causa-efeito. ${guidance.context}`
+    : `O diário não identifica uma explicação comportamental direta para a evolução de ${biomarker.name}. ${guidance.context}`
+
+  return {
+    hypotheses,
+    otherPoints,
+    questions: Array.from(new Set(questions)),
+    conclusion,
+    comparison
+  }
+}
+
 function ClinicalRuleAnalysis({ analysis }) {
   return (
     <div className="clinical-rule-analysis">
+      {analysis.notice && (
+        <div className="analysis-context-notice">
+          <strong>{analysis.notice.title}</strong>
+          <p>{analysis.notice.text}</p>
+        </div>
+      )}
+
       <div className="analysis-section-heading">
         <div>
           <span>Análise do período</span>
@@ -2469,17 +2802,41 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
     })
   }, [behaviours, diary, previousBiomarkerExam, latestBiomarkerExam, biomarker])
 
-  const phosphorusAnalysis = useMemo(() => {
-    if (biomarker?.id !== 'fosforo_inorganico' || !comparison || !previousBiomarkerExam || !latestBiomarkerExam) return null
+  const clinicalAnalysis = useMemo(() => {
+    if (!comparison || !previousBiomarkerExam || !latestBiomarkerExam) return null
 
-    return buildPhosphorusAnalysis({
-      diary,
-      behaviours,
+    if (biomarker?.id === 'fosforo_inorganico') {
+      return buildPhosphorusAnalysis({
+        diary,
+        behaviours,
+        previousDate: previousBiomarkerExam.date,
+        latestDate: latestBiomarkerExam.date,
+        comparison
+      })
+    }
+
+    if (biomarker?.id === 'paratormona_pth') {
+      return buildParathormoneAnalysis({
+        diary,
+        behaviours,
+        exams,
+        refs,
+        previousDate: previousBiomarkerExam.date,
+        latestDate: latestBiomarkerExam.date,
+        comparison
+      })
+    }
+
+    return buildGenericClinicalAnalysis({
+      biomarker,
+      periodRows,
       previousDate: previousBiomarkerExam.date,
       latestDate: latestBiomarkerExam.date,
-      comparison
+      comparison,
+      exams,
+      refs
     })
-  }, [biomarker, comparison, previousBiomarkerExam, latestBiomarkerExam, diary, behaviours])
+  }, [biomarker, comparison, previousBiomarkerExam, latestBiomarkerExam, diary, behaviours, exams, refs, periodRows])
 
   const reviewRows = periodRows.filter((row) => row.group === 'review').slice(0, 6)
   const supportiveRows = periodRows.filter((row) => row.group === 'supportive').slice(0, 6)
@@ -2559,37 +2916,7 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
             </p>
           </div>
 
-          {phosphorusAnalysis ? (
-            <ClinicalRuleAnalysis analysis={phosphorusAnalysis} />
-          ) : (
-            <>
-              <div className="section-header">
-                <h3>Comportamentos registados a rever</h3>
-                <span>{reviewRows.length}</span>
-              </div>
-
-              {reviewRows.length > 0 ? (
-                <div className="impact-list">
-                  {reviewRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} />)}
-                </div>
-              ) : (
-                <EmptyState title="Sem comportamentos assinalados" text="Não existem comportamentos relevantes marcados como Sim entre as duas análises." compact />
-              )}
-
-              <div className="section-header">
-                <h3>Adesão e fatores favoráveis registados</h3>
-                <span>{supportiveRows.length}</span>
-              </div>
-
-              {supportiveRows.length > 0 ? (
-                <div className="impact-list">
-                  {supportiveRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} positive />)}
-                </div>
-              ) : (
-                <EmptyState title="Sem fatores favoráveis assinalados" text="Não existem comportamentos deste grupo marcados como Sim durante o período analisado." compact />
-              )}
-            </>
-          )}
+          <ClinicalRuleAnalysis analysis={clinicalAnalysis} />
         </>
       )}
 
