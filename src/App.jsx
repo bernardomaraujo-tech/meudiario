@@ -2047,47 +2047,58 @@ function buildPhosphorusAnalysis({ diary, behaviours, previousDate, latestDate, 
 
 function ClinicalRuleAnalysis({ analysis }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      <div className="section-header">
-        <h3>Hipóteses principais</h3>
-        <span>{analysis.hypotheses.length}</span>
+    <div className="clinical-rule-analysis">
+      <div className="analysis-section-heading">
+        <div>
+          <span>Análise do período</span>
+          <h3>Hipóteses principais</h3>
+        </div>
+        <small>{analysis.hypotheses.length}</small>
       </div>
 
       {analysis.hypotheses.length > 0 ? (
-        analysis.hypotheses.map((item) => (
-          <div key={item.title} className={`suggestion-card ${item.tone || 'neutral'}`}>
-            <strong>{item.title}</strong>
-            <p>{item.text}</p>
-          </div>
-        ))
+        <ol className="hypothesis-list">
+          {analysis.hypotheses.map((item, index) => (
+            <li key={item.title} className={`hypothesis-item ${item.tone || 'neutral'}`}>
+              <span className="hypothesis-number" aria-hidden="true">{index + 1}</span>
+              <div className="hypothesis-content">
+                <div className="hypothesis-title-row">
+                  <strong>{item.title}</strong>
+                  <span>{item.tone === 'negative' ? 'Maior atenção' : 'A confirmar'}</span>
+                </div>
+                <p>{item.text}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       ) : (
         <EmptyState title="Sem hipótese principal" text="Não foram encontrados registos suficientes para destacar fatores plausíveis neste período." compact />
       )}
 
-      <div className="section-header">
-        <h3>Outros pontos a considerar</h3>
-      </div>
-
-      <div className="report-reading-card">
+      <details className="analysis-disclosure">
+        <summary>
+          <span>Outros pontos a considerar</span>
+          <small>{analysis.otherPoints.length}</small>
+        </summary>
         <ul>
           {analysis.otherPoints.map((text) => <li key={text}>{text}</li>)}
         </ul>
-      </div>
+      </details>
 
-      <div className="section-header">
-        <h3>O que falta confirmar</h3>
-      </div>
-
-      <div className="report-reading-card">
+      <details className="analysis-disclosure">
+        <summary>
+          <span>O que falta confirmar</span>
+          <small>{analysis.questions.length || 1}</small>
+        </summary>
         <ul>
           {analysis.questions.length > 0
             ? analysis.questions.map((text) => <li key={text}>{text}</li>)
             : <li>Confirmar porções, rótulos dos alimentos, data e condições da colheita.</li>}
         </ul>
-      </div>
+      </details>
 
-      <div className="suggestion-card neutral">
-        <strong>Conclusão orientativa</strong>
+      <div className="analysis-conclusion">
+        <span>Conclusão orientativa</span>
         <p>{analysis.conclusion}</p>
       </div>
     </div>
@@ -2487,8 +2498,8 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
   }
 
   return (
-    <section className="screen">
-      <div className="intro-card clinical">
+    <section className="screen impact-screen">
+      <div className="intro-card clinical impact-intro">
         <div className="intro-icon"><Activity size={22} /></div>
         <div>
           <p className="eyebrow">Análise orientada por regras</p>
@@ -2497,7 +2508,7 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
         </div>
       </div>
 
-      <div className="form-grid compact-grid">
+      <div className="form-grid compact-grid impact-selector">
         <label>
           Biomarcador
           <select value={selected} onChange={(e) => setSelected(e.target.value)}>
@@ -2507,7 +2518,7 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
       </div>
 
       {selectedCard && (
-        <div className={`followup-focus ${selectedCard.status}`}>
+        <div className={`followup-focus impact-result ${selectedCard.status}`}>
           <div>
             <span>Último resultado</span>
             <strong>{selectedCard.value}<small> {selectedCard.biomarker.unit}</small></strong>
@@ -2527,21 +2538,25 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
 
       {comparison && (
         <>
-          <div className={`suggestion-card ${comparison.outcome === 'worsened' ? 'negative' : comparison.outcome === 'improved' ? 'positive' : 'neutral'}`}>
-            <strong>
-              {comparison.outcome === 'worsened' && 'O biomarcador afastou-se da referência'}
-              {comparison.outcome === 'improved' && 'O biomarcador aproximou-se da referência'}
-              {comparison.outcome === 'stable' && 'O biomarcador manteve-se estável'}
-              {comparison.outcome === 'increased' && 'O biomarcador aumentou'}
-              {comparison.outcome === 'decreased' && 'O biomarcador diminuiu'}
-            </strong>
-            <p>
-              {formatNumber(comparison.previousValue)} → {formatNumber(comparison.currentValue)} {biomarker.unit}
-              {comparison.percentChange !== null && ` (${comparison.percentChange >= 0 ? '+' : ''}${comparison.percentChange.toFixed(1).replace('.', ',')}%)`}
+          <div className={`impact-change ${comparison.outcome === 'worsened' ? 'negative' : comparison.outcome === 'improved' ? 'positive' : 'neutral'}`}>
+            <div className="impact-change-heading">
+              <strong>
+                {comparison.outcome === 'worsened' && 'O biomarcador afastou-se da referência'}
+                {comparison.outcome === 'improved' && 'O biomarcador aproximou-se da referência'}
+                {comparison.outcome === 'stable' && 'O biomarcador manteve-se estável'}
+                {comparison.outcome === 'increased' && 'O biomarcador aumentou'}
+                {comparison.outcome === 'decreased' && 'O biomarcador diminuiu'}
+              </strong>
+              {comparison.percentChange !== null && (
+                <em>{comparison.percentChange >= 0 ? '+' : ''}{comparison.percentChange.toFixed(1).replace('.', ',')}%</em>
+              )}
+            </div>
+            <p className="impact-change-value">
+              {formatNumber(comparison.previousValue)} <span>→</span> {formatNumber(comparison.currentValue)} <small>{biomarker.unit}</small>
             </p>
-            <span>
-              Entre {formatDate(previousBiomarkerExam.date)} e {formatDate(latestBiomarkerExam.date)} · {biomarkerExams.length} análises disponíveis no histórico
-            </span>
+            <p className="impact-change-meta">
+              Entre {formatDate(previousBiomarkerExam.date)} e {formatDate(latestBiomarkerExam.date)} · {biomarkerExams.length} análises no histórico
+            </p>
           </div>
 
           {phosphorusAnalysis ? (
