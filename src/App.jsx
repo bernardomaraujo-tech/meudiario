@@ -1796,7 +1796,10 @@ function summarisePeriodBehaviours({ behaviours, diary, previousDate, latestDate
         rate: totalCount ? (yesCount / totalCount) * 100 : null
       }
     })
-    .filter((row) => row.totalCount > 0)
+    // Os valores 'Não' são gravados por defeito no diário e não representam
+    // necessariamente um comportamento assinalado pelo utilizador. Para esta
+    // leitura mostramos apenas comportamentos com pelo menos um registo 'Sim'.
+    .filter((row) => row.yesCount > 0)
     .sort((a, b) => b.yesCount - a.yesCount || b.totalCount - a.totalCount || a.behaviour.label.localeCompare(b.behaviour.label, 'pt-PT'))
 }
 
@@ -2245,7 +2248,7 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
           </div>
 
           <div className="section-header">
-            <h3>Comportamentos a rever no período</h3>
+            <h3>Comportamentos registados a rever</h3>
             <span>{reviewRows.length}</span>
           </div>
 
@@ -2254,11 +2257,11 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
               {reviewRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} />)}
             </div>
           ) : (
-            <EmptyState title="Sem comportamentos associados registados" text="Não foram encontrados comportamentos relevantes para este biomarcador entre as duas análises." compact />
+            <EmptyState title="Sem comportamentos assinalados" text="Não existem comportamentos relevantes marcados como Sim entre as duas análises." compact />
           )}
 
           <div className="section-header">
-            <h3>Adesão e fatores potencialmente favoráveis</h3>
+            <h3>Adesão e fatores favoráveis registados</h3>
             <span>{supportiveRows.length}</span>
           </div>
 
@@ -2267,7 +2270,7 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
               {supportiveRows.map((row) => <PeriodBehaviourRow key={row.behaviour.id} row={row} positive />)}
             </div>
           ) : (
-            <EmptyState title="Sem registos favoráveis associados" text="Não existem registos suficientes deste grupo durante o período analisado." compact />
+            <EmptyState title="Sem fatores favoráveis assinalados" text="Não existem comportamentos deste grupo marcados como Sim durante o período analisado." compact />
           )}
         </>
       )}
@@ -2281,21 +2284,47 @@ function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelecte
 }
 
 function PeriodBehaviourRow({ row, positive = false }) {
-  const percentage = row.rate === null ? 0 : row.rate
-
   return (
-    <div className="impact-row">
-      <strong>{row.behaviour.label}</strong>
-
-      <div className="impact-scale">
-        <i />
+    <div
+      className="impact-row"
+      style={{
+        gridTemplateColumns: 'minmax(0, 1fr) auto',
+        alignItems: 'center',
+        gap: '14px'
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <strong
+          title={row.behaviour.label}
+          style={{
+            display: 'block',
+            whiteSpace: 'normal',
+            overflow: 'visible',
+            textOverflow: 'clip',
+            lineHeight: 1.3
+          }}
+        >
+          {row.behaviour.label}
+        </strong>
         <span
-          className={positive ? 'positive' : 'negative'}
-          style={{ transform: `translateX(${Math.max(-92, Math.min(92, ((percentage - 50) / 50) * 92))}px)` }}
-        />
+          style={{
+            display: 'block',
+            marginTop: '4px',
+            fontSize: '12px',
+            color: 'var(--muted)',
+            fontWeight: 700
+          }}
+        >
+          Assinalado em {row.yesCount} {row.yesCount === 1 ? 'dia' : 'dias'} no período
+        </span>
       </div>
 
-      <b className={positive ? 'positive' : 'negative'}>{row.yesCount}/{row.totalCount} dias</b>
+      <b
+        className={positive ? 'positive' : 'negative'}
+        style={{ whiteSpace: 'nowrap', textAlign: 'right' }}
+      >
+        {row.yesCount}× Sim
+      </b>
     </div>
   )
 }
