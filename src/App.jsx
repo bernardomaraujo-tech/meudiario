@@ -24,13 +24,14 @@ import {
   X
 } from 'lucide-react'
 import { biomarkers, defaultBehaviours, defaultReferences } from './data/biomarkers.js'
-import { getAllCloudData, isCloudConfigured, saveAllCloudData } from './services/cloudStore.js'
+import { createBehaviourAnalysis, getAllCloudData, isCloudConfigured, saveAllCloudData } from './services/cloudStore.js'
 
 const STORAGE = {
   exams: 'ads_exams_v2',
   diary: 'ads_diary_v2',
   behaviours: 'ads_behaviours_v4_lista_fechada',
   refs: 'ads_refs_v2',
+  behaviourAnalysis: 'ads_behaviour_analysis_ai_v1',
   dataVersion: 'ads_data_version_v1',
   localResetVersion: 'ads_local_reset_version_v1'
 }
@@ -826,7 +827,6 @@ function App() {
   const isLoadingCloudRef = useRef(false)
   const [selectedBiomarkerId, setSelectedBiomarkerId] = useState(null)
   const [selectedExamId, setSelectedExamId] = useState(null)
-  const [impactBiomarkerId, setImpactBiomarkerId] = useState(null)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [cloudStatus, setCloudStatus] = useState(isCloudConfigured() ? 'Ligado' : 'Não configurado')
   const [cloudMessage, setCloudMessage] = useState(isCloudConfigured() ? 'Lista de comportamentos fechada. A carregar dados atuais da cloud.' : 'Configura o Apps Script para ativar a sincronização.')
@@ -987,9 +987,8 @@ function App() {
     if (nextTab !== 'analysis') setSelectedExamId(null)
   }
 
-  function analyseImpactFor(id) {
+  function analyseImpactFor() {
     setSelectedBiomarkerId(null)
-    setImpactBiomarkerId(id)
     setTab('impact')
   }
 
@@ -1075,7 +1074,6 @@ function App() {
             behaviours={behaviours}
             refs={refs}
             latestExam={latestExam}
-            initialSelected={impactBiomarkerId}
           />
         )}
 
@@ -2752,177 +2750,425 @@ function shiftDate(dateText, delta) {
   return d.toISOString().slice(0, 10)
 }
 
-function ImpactView({ exams, diary, behaviours, refs, latestExam, initialSelected }) {
-  const targetCards = useMemo(() => latestBiomarkerCards(latestExam, refs), [latestExam, refs])
-  const targetBiomarkers = targetCards.map((card) => card.biomarker)
-  const fallbackSelected = initialSelected || targetBiomarkers[0]?.id || biomarkers[0]?.id
-  const [selected, setSelected] = useState(fallbackSelected)
+function analysisPosition(value, refConfig) {
+  const result = parseNum(value)
+  const min = parseNum(refConfig?.sufficientMin) ?? parseNum(refConfig?.idealMin)
+  const max = parseNum(refConfig?.sufficientMax) ?? parseNum(refConfig?.idealMax)
 
-  useEffect(() => {
-    if (initialSelected) setSelected(initialSelected)
-  }, [initialSelected])
+  if (result === null) return 'desconhecida'
+  if (min !== null && result < min) return 'abaixo'
+  if (max !== null && result > max) return 'acima'
 
-  useEffect(() => {
-    if (!targetBiomarkers.length) return
+  return 'fora'
+}
 
-    if (!targetBiomarkers.some((b) => b.id === selected)) {
-      setSelected(targetBiomarkers[0].id)
+function previousExamReading(exams, biomarkerId, latestExam) {
+  const latestKey = `${latestExam.date} ${latestExam.time || '00:00'}`
+
+  return [...exams]
+    .filter((exam) => exam.id !== latestExam.id)
+    .filter((exam) => `${exam.date} ${exam.time || '00:00'}` < latestKey)
+    .filter((exam) => parseNum(exam.values?.[biomarkerId]) !== null)
+    .sort((a, b) => `${b.date} ${b.time || '00:00'}`.localeCompare(`${a.date} ${a.time || '00:00'}`))[0] || null
+}
+
+function buildBehaviourAnalysisInput({ exams, diary, behaviours, refs, latestExam }) {
+  const periodEnd = latestExam.date
+  const periodStart = shiftDate(periodEnd, -29)
+  const isInPeriod = (date) => Boolean(date && date >= periodStart && date <= periodEnd)
+  const periodRows = diary.filter((row) => isInPeriod(row?.date))
+  const recordedDates = Array.from(new Set(
+    periodRows
+      .filter((row) => row.behaviourId !== '__note__')
+      .map((row) => row.date)
+  )).sort()
+  const recordedDateSet = new Set(recordedDates)
+  const outCards = latestBiomarkerCards(latestExam, refs, ['out'])
+  const allCards = latestBiomarkerCards(latestExam, refs)
+
+  const behaviourSummaries = behaviours.map((behaviour) => {
+    const rows = periodRows.filter((row) => row.behaviourId === behaviour.id && recordedDateSet.has(row.date))
+    const yesDates = rows.filter((row) => row.value === true).map((row) => row.date).sort()
+    const noCount = rows.filter((row) => row.value === false).length
+
+    return {
+      id: behaviour.id,
+      label: behaviour.label,
+      category: behaviour.category || '',
+      yesCount: yesDates.length,
+      noCount,
+      recordedCount: rows.length,
+      yesDates
     }
-  }, [targetBiomarkers, selected])
+  })
 
-  const biomarker = biomarkers.find((b) => b.id === selected) || targetBiomarkers[0] || biomarkers[0]
-  const selectedCard = targetCards.find((card) => card.biomarker.id === biomarker?.id)
+  function biomarkerSnapshot(card) {
+    const { biomarker, value, status } = card
+    const refConfig = getReferenceConfig(biomarker.id, refs)
+    const previousExam = previousExamReading(exams, biomarker.id, latestExam)
+    const previousValue = previousExam ? parseNum(previousExam.values?.[biomarker.id]) : null
+    const currentValue = parseNum(value)
+    const history = [...exams]
+      .filter((exam) => parseNum(exam.values?.[biomarker.id]) !== null)
+      .sort((a, b) => `${a.date} ${a.time || '00:00'}`.localeCompare(`${b.date} ${b.time || '00:00'}`))
+      .slice(-6)
+      .map((exam) => ({
+        date: exam.date,
+        value: parseNum(exam.values?.[biomarker.id])
+      }))
 
-  const biomarkerExams = useMemo(() => {
-    return [...exams]
-      .filter((exam) => parseNum(exam.values?.[biomarker?.id]) !== null)
-      .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))
-  }, [exams, biomarker])
-
-  const latestBiomarkerExam = biomarkerExams[biomarkerExams.length - 1] || null
-  const previousBiomarkerExam = biomarkerExams[biomarkerExams.length - 2] || null
-  const refConfig = getReferenceConfig(biomarker?.id, refs)
-  const comparison = latestBiomarkerExam && previousBiomarkerExam
-    ? compareBiomarkerValues(
-        latestBiomarkerExam.values?.[biomarker.id],
-        previousBiomarkerExam.values?.[biomarker.id],
-        refConfig
-      )
-    : null
-
-  const periodRows = useMemo(() => {
-    if (!previousBiomarkerExam || !latestBiomarkerExam || !biomarker) return []
-
-    return summarisePeriodBehaviours({
-      behaviours,
-      diary,
-      previousDate: previousBiomarkerExam.date,
-      latestDate: latestBiomarkerExam.date,
-      biomarkerId: biomarker.id
-    })
-  }, [behaviours, diary, previousBiomarkerExam, latestBiomarkerExam, biomarker])
-
-  const clinicalAnalysis = useMemo(() => {
-    if (!comparison || !previousBiomarkerExam || !latestBiomarkerExam) return null
-
-    if (biomarker?.id === 'fosforo_inorganico') {
-      return buildPhosphorusAnalysis({
-        diary,
-        behaviours,
-        previousDate: previousBiomarkerExam.date,
-        latestDate: latestBiomarkerExam.date,
-        comparison
-      })
+    return {
+      id: biomarker.id,
+      name: biomarker.name,
+      category: biomarker.category,
+      description: biomarker.description,
+      unit: biomarker.unit,
+      result: currentValue,
+      status,
+      position: analysisPosition(currentValue, refConfig),
+      reference: {
+        display: formatRef(refConfig),
+        direction: refConfig.direction || biomarker.direction || 'range',
+        minimum: parseNum(refConfig.sufficientMin),
+        maximum: parseNum(refConfig.sufficientMax)
+      },
+      previous: previousExam ? {
+        date: previousExam.date,
+        result: previousValue,
+        percentChange: previousValue !== null && Math.abs(previousValue) > 0.00001
+          ? Number((((currentValue - previousValue) / Math.abs(previousValue)) * 100).toFixed(1))
+          : null
+      } : null,
+      history
     }
-
-    if (biomarker?.id === 'paratormona_pth') {
-      return buildParathormoneAnalysis({
-        diary,
-        behaviours,
-        exams,
-        refs,
-        previousDate: previousBiomarkerExam.date,
-        latestDate: latestBiomarkerExam.date,
-        comparison
-      })
-    }
-
-    return buildGenericClinicalAnalysis({
-      biomarker,
-      periodRows,
-      previousDate: previousBiomarkerExam.date,
-      latestDate: latestBiomarkerExam.date,
-      comparison,
-      exams,
-      refs
-    })
-  }, [biomarker, comparison, previousBiomarkerExam, latestBiomarkerExam, diary, behaviours, exams, refs, periodRows])
-
-  const reviewRows = periodRows.filter((row) => row.group === 'review').slice(0, 6)
-  const supportiveRows = periodRows.filter((row) => row.group === 'supportive').slice(0, 6)
-  const confidence = confidenceFromHistory(biomarkerExams.length)
-
-  if (!latestExam) {
-    return <EmptyState title="Ainda não existem análises" text="Insere primeiro uma análise para a app conseguir comparar a evolução dos biomarcadores com o diário." />
   }
 
-  if (!targetBiomarkers.length) {
-    return (
-      <section className="screen">
-        <EmptyState title="Sem biomarcadores para analisar" text="A última análise não tem biomarcadores com valor preenchido." />
-      </section>
-    )
+  return {
+    version: '1.1',
+    language: 'pt-PT',
+    clinicalContext: 'Pessoa adulta em hemodiálise. Produzir apenas hipóteses orientativas a validar pela equipa clínica.',
+    period: {
+      start: periodStart,
+      end: periodEnd,
+      days: 30,
+      recordedDays: recordedDates.length,
+      recordedDates
+    },
+    sourceExam: {
+      id: latestExam.id,
+      name: latestExam.name || '',
+      date: latestExam.date,
+      time: latestExam.time || ''
+    },
+    biomarkers: outCards.map(biomarkerSnapshot),
+    contextBiomarkers: allCards.map((card) => {
+      const refConfig = getReferenceConfig(card.biomarker.id, refs)
+
+      return {
+        id: card.biomarker.id,
+        name: card.biomarker.name,
+        result: parseNum(card.value),
+        unit: card.biomarker.unit,
+        status: card.status,
+        reference: formatRef(refConfig)
+      }
+    }),
+    behaviours: behaviourSummaries,
+    notes: periodRows
+      .filter((row) => row.behaviourId === '__note__' && String(row.note || '').trim())
+      .map((row) => ({ date: row.date, text: String(row.note).trim() })),
+    dataLimitations: [
+      'O registo Sim/Não não indica porção, quantidade, dose ou horário.',
+      'Associação temporal não demonstra causa-efeito.',
+      'A ausência de um comportamento no diário não exclui causas clínicas, terapêuticas ou relacionadas com a colheita.'
+    ]
+  }
+}
+
+function fingerprintAnalysisInput(input) {
+  const text = JSON.stringify(input)
+  let hash = 2166136261
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+
+  return `v1-${(hash >>> 0).toString(36)}`
+}
+
+function confidenceLabel(value) {
+  return {
+    baixa: 'Confiança baixa',
+    moderada: 'Confiança moderada',
+    alta: 'Confiança alta'
+  }[value] || 'Confiança limitada'
+}
+
+function AnalysisBulletSection({ title, items }) {
+  if (!Array.isArray(items) || !items.length) return null
+
+  return (
+    <div className="ai-analysis-list-section">
+      <strong>{title}</strong>
+      <ul>
+        {items.map((item, index) => <li key={`${title}-${index}`}>{item}</li>)}
+      </ul>
+    </div>
+  )
+}
+
+function BiomarkerAiAnalysis({ snapshot, analysis, initiallyOpen = false }) {
+  const hypotheses = Array.isArray(analysis?.hypotheses) ? analysis.hypotheses : []
+
+  return (
+    <details className="biomarker-ai-card" open={initiallyOpen}>
+      <summary>
+        <span className="biomarker-ai-heading">
+          <strong>{snapshot.name}</strong>
+          <small>{snapshot.position === 'acima' ? 'Acima do intervalo' : snapshot.position === 'abaixo' ? 'Abaixo do intervalo' : 'Fora do intervalo'}</small>
+        </span>
+        <span className="biomarker-ai-result">
+          <strong>{formatNumber(snapshot.result)} <small>{snapshot.unit}</small></strong>
+          <small>Ref. {snapshot.reference.display}</small>
+        </span>
+      </summary>
+
+      <div className="biomarker-ai-body">
+        {analysis ? (
+          <>
+            <div className="ai-summary-row">
+              <span className={`confidence-pill ${analysis.confidence || 'baixa'}`}>{confidenceLabel(analysis.confidence)}</span>
+              <p>{analysis.summary}</p>
+            </div>
+
+            <div className="analysis-section-heading compact">
+              <div>
+                <span>Leitura por IA</span>
+                <h3>Hipóteses principais</h3>
+              </div>
+              <small>{hypotheses.length}</small>
+            </div>
+
+            {hypotheses.length > 0 ? (
+              <ol className="hypothesis-list ai-hypotheses">
+                {hypotheses.map((item, index) => (
+                  <li key={`${item.title}-${index}`} className={`hypothesis-item ${item.priority === 'alta' ? 'negative' : 'neutral'}`}>
+                    <span className="hypothesis-number" aria-hidden="true">{index + 1}</span>
+                    <div className="hypothesis-content">
+                      <div className="hypothesis-title-row">
+                        <strong>{item.title}</strong>
+                        <span>{item.priority === 'alta' ? 'Maior atenção' : 'A confirmar'}</span>
+                      </div>
+                      <p>{item.explanation}</p>
+                      {Array.isArray(item.evidence) && item.evidence.length > 0 && (
+                        <ul className="hypothesis-evidence">
+                          {item.evidence.map((evidence, evidenceIndex) => <li key={evidenceIndex}>{evidence}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EmptyState title="Sem hipótese comportamental sólida" text="Os registos não permitem destacar um comportamento específico para este resultado." compact />
+            )}
+
+            <AnalysisBulletSection title="Fatores favoráveis ou contraditórios" items={analysis.favourableFactors} />
+            <AnalysisBulletSection title="O que falta nos dados" items={analysis.missingInformation} />
+            <AnalysisBulletSection title="O que confirmar" items={analysis.confirmationQuestions} />
+
+            <div className="analysis-conclusion">
+              <span>Conclusão orientativa</span>
+              <p>{analysis.conclusion}</p>
+            </div>
+          </>
+        ) : (
+          <EmptyState title="Análise incompleta" text="A IA não devolveu uma secção válida para este biomarcador. Volta a gerar o relatório." compact />
+        )}
+      </div>
+    </details>
+  )
+}
+
+function GeneratedBehaviourAnalysis({ record, input }) {
+  const analysis = record.analysis
+  const generatedDate = record.generatedAt ? new Date(record.generatedAt) : null
+
+  return (
+    <div className="generated-behaviour-analysis">
+      <div className="ai-overview-card">
+        <div className="ai-overview-heading">
+          <span>Relatório criado por IA</span>
+          {generatedDate && !Number.isNaN(generatedDate.getTime()) && (
+            <small>{generatedDate.toLocaleDateString('pt-PT')} · {generatedDate.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</small>
+          )}
+        </div>
+        <h3>Leitura global</h3>
+        <p>{analysis.overview}</p>
+        {analysis.dataQuality && (
+          <div className={`data-quality ${analysis.dataQuality.level || 'limitada'}`}>
+            <strong>Qualidade dos dados: {analysis.dataQuality.level || 'limitada'}</strong>
+            <span>{analysis.dataQuality.explanation}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="analysis-section-heading biomarker-section-heading">
+        <div>
+          <span>Análise separada</span>
+          <h3>Por biomarcador</h3>
+        </div>
+        <small>{input.biomarkers.length}</small>
+      </div>
+
+      <div className="biomarker-ai-list">
+        {input.biomarkers.map((snapshot, index) => (
+          <BiomarkerAiAnalysis
+            key={snapshot.id}
+            snapshot={snapshot}
+            analysis={analysis.biomarkers.find((item) => item.biomarkerId === snapshot.id)}
+            initiallyOpen={index === 0}
+          />
+        ))}
+      </div>
+
+      <AnalysisBulletSection title="Padrões comuns entre biomarcadores" items={analysis.sharedPatterns} />
+    </div>
+  )
+}
+
+function ImpactView({ exams, diary, behaviours, refs, latestExam }) {
+  const input = useMemo(() => {
+    if (!latestExam) return null
+
+    return buildBehaviourAnalysisInput({ exams, diary, behaviours, refs, latestExam })
+  }, [exams, diary, behaviours, refs, latestExam])
+  const fingerprint = useMemo(() => input ? fingerprintAnalysisInput(input) : '', [input])
+  const [cachedRecord, setCachedRecord] = useState(() => loadJson(STORAGE.behaviourAnalysis, null))
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const activeRecord = cachedRecord?.fingerprint === fingerprint ? cachedRecord : null
+
+  async function generateAnalysis() {
+    if (!input || !input.biomarkers.length || !input.period.recordedDays || loading) return
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await createBehaviourAnalysis(input)
+      const record = {
+        fingerprint,
+        generatedAt: response.generatedAt || new Date().toISOString(),
+        model: response.model || '',
+        analysis: response.analysis
+      }
+
+      saveJson(STORAGE.behaviourAnalysis, record)
+      setCachedRecord(record)
+    } catch (requestError) {
+      setError(requestError.message || 'Não foi possível criar a análise. Tenta novamente.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!latestExam || !input) {
+    return <EmptyState title="Ainda não existem análises" text="Insere primeiro uma análise para cruzar os resultados com os comportamentos registados." />
   }
 
   return (
-    <section className="screen impact-screen">
+    <section className="screen impact-screen ai-impact-screen">
       <div className="intro-card clinical impact-intro">
         <div className="intro-icon"><Activity size={22} /></div>
         <div>
-          <p className="eyebrow">Análise orientada por regras</p>
-          <h2>O que poderá explicar esta evolução?</h2>
-          <p>Compara os resultados e interpreta os comportamentos registados através de regras clínicas transparentes, sem inteligência artificial.</p>
+          <p className="eyebrow">Análise assistida por IA</p>
+          <h2>Comportamentos e resultados</h2>
+          <p>Cruza os 30 dias anteriores à análise mais recente com todos os biomarcadores fora dos limites configurados.</p>
         </div>
       </div>
 
-      <div className="form-grid compact-grid impact-selector">
-        <label>
-          Biomarcador
-          <select value={selected} onChange={(e) => setSelected(e.target.value)}>
-            {targetBiomarkers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </label>
-      </div>
-
-      {selectedCard && (
-        <div className={`followup-focus impact-result ${selectedCard.status}`}>
+      <div className="analysis-period-card">
+        <div className="analysis-period-heading">
           <div>
-            <span>Último resultado</span>
-            <strong>{selectedCard.value}<small> {selectedCard.biomarker.unit}</small></strong>
+            <span>Período analisado</span>
+            <strong>{formatDate(input.period.start)} — {formatDate(input.period.end)}</strong>
           </div>
-
-          <em className={classNameForStatus(selectedCard.status)}>{statusIcon(selectedCard.status)} {statusLabel(selectedCard.status)}</em>
+          <small>30 dias</small>
         </div>
-      )}
 
-      {!comparison && (
-        <div className="suggestion-card neutral">
-          <strong>Ainda sem comparação disponível</strong>
-          <p>É necessária uma segunda análise com valor para {biomarker.name}.</p>
-          <span>O acompanhamento começa logo que existam dois resultados deste biomarcador.</span>
+        <div className="analysis-period-stats">
+          <div><strong>{input.period.recordedDays}</strong><span>dias com diário</span></div>
+          <div><strong>{input.biomarkers.length}</strong><span>fora do intervalo</span></div>
+          <div><strong>{input.behaviours.filter((item) => item.yesCount > 0).length}</strong><span>comportamentos assinalados</span></div>
         </div>
-      )}
+      </div>
 
-      {comparison && (
+      {input.biomarkers.length === 0 ? (
+        <div className="analysis-positive-state">
+          <Check size={22} />
+          <div>
+            <strong>Sem biomarcadores fora do intervalo</strong>
+            <p>Na análise mais recente, todos os resultados preenchidos estão dentro dos limites configurados. Não é necessário chamar a IA.</p>
+          </div>
+        </div>
+      ) : (
         <>
-          <div className={`impact-change ${comparison.outcome === 'worsened' ? 'negative' : comparison.outcome === 'improved' ? 'positive' : 'neutral'}`}>
-            <div className="impact-change-heading">
-              <strong>
-                {comparison.outcome === 'worsened' && 'O biomarcador afastou-se da referência'}
-                {comparison.outcome === 'improved' && 'O biomarcador aproximou-se da referência'}
-                {comparison.outcome === 'stable' && 'O biomarcador manteve-se estável'}
-                {comparison.outcome === 'increased' && 'O biomarcador aumentou'}
-                {comparison.outcome === 'decreased' && 'O biomarcador diminuiu'}
-              </strong>
-              {comparison.percentChange !== null && (
-                <em>{comparison.percentChange >= 0 ? '+' : ''}{comparison.percentChange.toFixed(1).replace('.', ',')}%</em>
-              )}
+          <div className="out-biomarker-strip">
+            <span>Resultados que serão analisados</span>
+            <div>
+              {input.biomarkers.map((item) => (
+                <span key={item.id}>{item.name} <strong>{formatNumber(item.result)} {item.unit}</strong></span>
+              ))}
             </div>
-            <p className="impact-change-value">
-              {formatNumber(comparison.previousValue)} <span>→</span> {formatNumber(comparison.currentValue)} <small>{biomarker.unit}</small>
-            </p>
-            <p className="impact-change-meta">
-              Entre {formatDate(previousBiomarkerExam.date)} e {formatDate(latestBiomarkerExam.date)} · {biomarkerExams.length} análises no histórico
-            </p>
           </div>
 
-          <ClinicalRuleAnalysis analysis={clinicalAnalysis} />
+          {input.period.recordedDays < 10 && (
+            <div className="analysis-data-warning">
+              <Info size={18} />
+              <p>{input.period.recordedDays === 0 ? 'Não existem dias de diário preenchidos neste período. Regista comportamentos antes de criar a análise.' : `Existem apenas ${input.period.recordedDays} dias de diário. A análise pode ser criada, mas terá confiança limitada.`}</p>
+            </div>
+          )}
+
+          <button
+            className="primary-action create-analysis-button"
+            onClick={generateAnalysis}
+            disabled={loading || input.period.recordedDays === 0}
+            aria-busy={loading}
+          >
+            <Sparkle />
+            {loading ? 'A cruzar resultados e comportamentos…' : 'Criar Análise de Comportamentos'}
+          </button>
+
+          {cachedRecord && !activeRecord && (
+            <p className="analysis-stale-note">Os dados mudaram desde o último relatório. Cria uma nova análise para atualizar a leitura.</p>
+          )}
+
+          {error && (
+            <div className="analysis-error" role="alert">
+              <strong>Não foi possível criar a análise</strong>
+              <p>{error}</p>
+            </div>
+          )}
+
+          {loading && (
+            <div className="analysis-loading" role="status">
+              <span aria-hidden="true" />
+              <div>
+                <strong>A preparar o relatório completo</strong>
+                <p>A IA está a analisar cada biomarcador separadamente. Pode demorar alguns segundos.</p>
+              </div>
+            </div>
+          )}
+
+          {activeRecord && <GeneratedBehaviourAnalysis record={activeRecord} input={input} />}
         </>
       )}
 
-      <div className="info-card warning-soft">
+      <div className="info-card warning-soft analysis-safety-note">
         <Sparkle />
-        <p>Esta leitura é produzida por regras fixas e pelos dados registados. Identifica hipóteses plausíveis, não prova causa-efeito e não deve justificar alterações de dieta, líquidos, diálise ou medicação sem validação clínica.</p>
+        <p>Esta análise identifica hipóteses plausíveis, não prova causa-efeito nem substitui a equipa clínica. Não alteres dieta, líquidos, diálise ou medicação apenas com base neste relatório.</p>
       </div>
     </section>
   )
@@ -3038,7 +3284,7 @@ function MoreView({ latestExam, refs, setRefs, goTo, onSelectBiomarker, onAnalys
 
             <div className="followup-actions">
               <button onClick={() => onSelectBiomarker?.(biomarker.id)}>Ver evolução</button>
-              <button className="primary-mini" onClick={() => onAnalyseImpact?.(biomarker.id)}>Analisar impacto</button>
+              <button className="primary-mini" onClick={() => onAnalyseImpact?.()}>Abrir análise</button>
             </div>
           </article>
         ))}
