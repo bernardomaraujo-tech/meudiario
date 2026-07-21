@@ -6,13 +6,8 @@
  *      OPENAI_API_KEY = chave do projeto OpenAI
  *      OPENAI_MODEL   = gpt-5.6-sol (opcional)
  *      AI_DAILY_LIMIT = 10 (opcional; máximo diário global)
- * 3. No router existente de doPost(e), depois de validar APP_TOKEN, adicionar:
- *
- *    if (request.action === 'createBehaviorAnalysis') {
- *      return ContentService
- *        .createTextOutput(JSON.stringify(createBehaviorAnalysis_(request.data || {})))
- *        .setMimeType(ContentService.MimeType.JSON);
- *    }
+ * 3. Substituir também Code.gs pela versão entregue em conjunto com este
+ *    ficheiro; a rota createBehaviorAnalysis já está integrada em route_().
  * 4. Criar uma nova versão da implementação da Web App.
  *
  * A chave da OpenAI nunca deve ser colocada no React, no GitHub ou no browser.
