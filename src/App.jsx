@@ -534,14 +534,39 @@ function listKeyBehaviour(item) {
 function mergeListByKey(cloudList, localList, makeKey) {
   const merged = new Map()
 
-  ;[...(Array.isArray(cloudList) ? cloudList : []), ...(Array.isArray(localList) ? localList : [])].forEach((item) => {
+  // Primeiro carrega os dados locais, para preservar registos ainda não sincronizados.
+  ;(Array.isArray(localList) ? localList : []).forEach((item) => {
     const key = makeKey(item)
 
     if (!key) return
 
+    merged.set(key, { ...item })
+  })
+
+  // Depois aplica os dados da cloud, que são a fonte principal.
+  // O objeto values é fundido biomarcador a biomarcador para impedir que
+  // uma versão local antiga elimine resultados novos existentes no Google Sheets.
+  ;(Array.isArray(cloudList) ? cloudList : []).forEach((item) => {
+    const key = makeKey(item)
+
+    if (!key) return
+
+    const localItem = merged.get(key) || {}
+    const hasValues =
+      (localItem.values && typeof localItem.values === 'object') ||
+      (item.values && typeof item.values === 'object')
+
     merged.set(key, {
-      ...(merged.get(key) || {}),
-      ...item
+      ...localItem,
+      ...item,
+      ...(hasValues
+        ? {
+            values: {
+              ...(localItem.values || {}),
+              ...(item.values || {})
+            }
+          }
+        : {})
     })
   })
 
