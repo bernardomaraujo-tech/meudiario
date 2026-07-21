@@ -749,7 +749,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   border: 1px solid #d9e6f4;
 }
 
-/* AnÃ¡lise de impacto â€” apresentaÃ§Ã£o mobile-first e isolada desta pÃ¡gina. */
+/* Análise de impacto — apresentação mobile-first e isolada desta página. */
 .impact-screen {
   gap: 12px;
 }
@@ -1021,7 +1021,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 .analysis-disclosure summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 16px;
+  grid-template-columns: minmax(0, 1fr) auto 14px;
   align-items: center;
   gap: 8px;
   min-height: 50px;
@@ -1038,16 +1038,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 
 .analysis-disclosure summary::after {
-  content: 'â€º';
-  color: var(--blue);
-  font-size: 20px;
-  line-height: 1;
-  transform: rotate(90deg);
+  content: '';
+  width: 7px;
+  height: 7px;
+  justify-self: center;
+  border-right: 2px solid var(--blue);
+  border-bottom: 2px solid var(--blue);
+  transform: rotate(45deg) translate(-1px, -1px);
   transition: transform .16s ease;
 }
 
 .analysis-disclosure[open] summary::after {
-  transform: rotate(-90deg);
+  transform: rotate(225deg) translate(-1px, -1px);
 }
 
 .analysis-disclosure summary small {
